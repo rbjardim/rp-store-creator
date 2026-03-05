@@ -8,9 +8,7 @@ export default {
     container: {
       center: true,
       padding: "2rem",
-      screens: {
-        "2xl": "1400px",
-      },
+      screens: { "2xl": "1400px" },
     },
     extend: {
       fontFamily: {
@@ -64,6 +62,7 @@ export default {
         success: "hsl(var(--success))",
         discount: "hsl(var(--discount))",
         "old-price": "hsl(var(--old-price))",
+        highlight: "hsl(var(--highlight))",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -71,21 +70,12 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       keyframes: {
-        "accordion-down": {
-          from: { height: "0" },
-          to: { height: "var(--radix-accordion-content-height)" },
-        },
-        "accordion-up": {
-          from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: "0" },
-        },
-        "fade-in-up": {
-          from: { opacity: "0", transform: "translateY(20px)" },
-          to: { opacity: "1", transform: "translateY(0)" },
-        },
+        "accordion-down": { from: { height: "0" }, to: { height: "var(--radix-accordion-content-height)" } },
+        "accordion-up": { from: { height: "var(--radix-accordion-content-height)" }, to: { height: "0" } },
+        "fade-in-up": { from: { opacity: "0", transform: "translateY(20px)" }, to: { opacity: "1", transform: "translateY(0)" } },
         "pulse-glow": {
-          "0%, 100%": { boxShadow: "0 0 10px hsl(0 85% 50% / 0.3)" },
-          "50%": { boxShadow: "0 0 25px hsl(0 85% 50% / 0.5)" },
+          "0%, 100%": { boxShadow: "0 0 10px hsl(220 10% 50% / 0.3)" },
+          "50%": { boxShadow: "0 0 25px hsl(220 10% 50% / 0.5)" },
         },
       },
       animation: {

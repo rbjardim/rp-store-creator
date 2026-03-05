@@ -1,55 +1,55 @@
 import { ShoppingCart } from "lucide-react";
-import type { Product } from "@/data/products";
+import { useCart } from "@/contexts/CartContext";
 
 type Props = {
-  product: Product;
+  product: {
+    id: string;
+    name: string;
+    price: number;
+    old_price: number | null;
+    discount: number | null;
+    image_url: string | null;
+    tag: string | null;
+  };
 };
 
 const ProductCard = ({ product }: Props) => {
-  const formatPrice = (value: number) =>
-    value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const { addItem } = useCart();
+
+  const formatPrice = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   return (
-    <div className="group card-gradient overflow-hidden rounded-lg border border-border transition-all hover:border-primary/40 hover:shadow-lg">
-      {/* Image */}
-      <div className="relative aspect-square overflow-hidden">
-        <img
-          src={product.image}
-          alt={product.name}
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-        />
+    <div className="group card-gradient overflow-hidden rounded-lg border border-border transition-all hover:border-accent/40 hover:shadow-lg">
+      <div className="relative aspect-square overflow-hidden bg-secondary">
+        {product.image_url ? (
+          <img src={product.image_url} alt={product.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <ShoppingCart className="h-12 w-12 opacity-20" />
+          </div>
+        )}
         {product.tag && (
-          <span className="absolute left-2 top-2 rounded bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground">
+          <span className="absolute left-2 top-2 rounded bg-accent px-2 py-0.5 text-xs font-bold text-accent-foreground">
             {product.tag}
           </span>
         )}
       </div>
-
-      {/* Info */}
       <div className="p-4">
-        <h3 className="text-sm font-bold text-foreground leading-tight line-clamp-2">
-          {product.name}
-        </h3>
-
+        <h3 className="text-sm font-bold text-foreground leading-tight line-clamp-2">{product.name}</h3>
         <div className="mt-3 flex items-baseline gap-2">
-          {product.oldPrice && (
-            <span className="text-xs text-old-price line-through">
-              {formatPrice(product.oldPrice)}
-            </span>
+          {product.old_price && (
+            <span className="text-xs text-old-price line-through">{formatPrice(product.old_price)}</span>
           )}
           {product.discount && (
-            <span className="text-xs font-bold text-discount">
-              ↘ {product.discount}% OFF
-            </span>
+            <span className="text-xs font-bold text-discount">↘ {product.discount}% OFF</span>
           )}
         </div>
-
-        <p className="mt-1 font-display text-2xl text-foreground">
-          {formatPrice(product.price)}
-        </p>
+        <p className="mt-1 font-display text-2xl text-foreground">{formatPrice(product.price)}</p>
         <p className="text-xs text-muted-foreground">À vista no Pix</p>
-
-        <button className="mt-3 flex w-full items-center justify-center gap-2 rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:opacity-90 active:scale-[0.98]">
+        <button
+          onClick={() => addItem({ id: product.id, name: product.name, price: product.price, image_url: product.image_url })}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-md bg-accent py-2.5 text-sm font-semibold text-accent-foreground transition-all hover:opacity-90 active:scale-[0.98]"
+        >
           <ShoppingCart className="h-4 w-4" />
           Comprar agora
         </button>

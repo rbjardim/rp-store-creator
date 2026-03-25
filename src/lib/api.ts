@@ -1,4 +1,5 @@
-export const API_URL = "http://localhost:3001/api";
+export const API_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 export async function apiFetch<T = any>(
   path: string,
@@ -10,7 +11,7 @@ export async function apiFetch<T = any>(
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      Authorization: token ? `Bearer ${token}` : "",
       ...(options.headers || {}),
     },
   });

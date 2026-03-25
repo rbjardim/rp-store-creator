@@ -88,52 +88,59 @@ router.post("/", authRequired, adminOnly, upload.single("image"), async (req, re
     const imageData = req.file ? req.file.buffer : null;
     const imageMimeType = req.file ? req.file.mimetype : null;
 
-    await pool.execute(
-      `
-      INSERT INTO products
-      (
-        name,
-        price,
-        old_price,
-        discount,
-        tag,
-        category_id,
-        image_url,
-        image_data,
-        image_mime_type,
-        active,
-        sort_order
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        name,
-        Number(price),
-        old_price ? Number(old_price) : null,
-        discount ? Number(discount) : null,
-        tag || null,
-        category_id || null,
-        null,
-        imageData,
-        imageMimeType,
-        active === "true" ? 1 : 0,
-        sort_order ? Number(sort_order) : 0,
-      ]
-    );
+    console.log("BODY:", req.body);
+    console.log("FILE:", req.file);
+
+      await pool.execute(
+    `
+    INSERT INTO products
+    (
+      name,
+      price,
+      old_price,
+      discount,
+      tag,
+      category_id,
+      image_url,
+      image_data,
+      image_mime_type,
+      active,
+      sort_order,
+      description
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      name,
+      Number(price),
+      old_price ? Number(old_price) : null,
+      discount ? Number(discount) : null,
+      tag || null,
+      category_id || null,
+      null,
+      imageData,
+      imageMimeType,
+      active === "true" ? 1 : 0,
+      sort_order ? Number(sort_order) : 0,
+      description || null,
+    ]
+  );
 
     res.status(201).json({ message: "Produto criado com sucesso." });
     } catch (error) {
-    console.error("Erro ao criar produto:", error);
-    console.error("Mensagem:", error.message);
-    console.error("SQL Message:", error.sqlMessage);
-    console.error("SQL Code:", error.code);
-    res.status(500).json({
-      message: "Erro ao criar produto.",
-      error: error.message,
-      sqlMessage: error.sqlMessage,
-      code: error.code,
-    });
-  }
+      console.error("🔥 ERRO AO CRIAR PRODUTO:");
+      console.error(error);
+      console.error("Mensagem:", error.message);
+      console.error("SQL Message:", error.sqlMessage);
+      console.error("Code:", error.code);
+
+      res.status(500).json({
+        message: "Erro ao criar produto.",
+        error: error.message,
+        sqlMessage: error.sqlMessage,
+        code: error.code,
+      });
+    }
 });
 
 router.put("/:id", authRequired, adminOnly, upload.single("image"), async (req, res) => {

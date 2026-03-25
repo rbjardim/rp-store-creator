@@ -42,7 +42,7 @@ app.options("*", cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/uploads", express.static(path.resolve(__dirname, "uploads")));
+app.use("/uploads", express.static(path.resolve(__dirname, "../uploads")));
 
 app.use((req, res, next) => {
   console.log("METHOD:", req.method, "URL:", req.url);

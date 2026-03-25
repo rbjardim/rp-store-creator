@@ -1,32 +1,16 @@
 const express = require("express");
 const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
 const pool = require("../db");
 const { authRequired, adminOnly } = require("../middlewares/auth");
 
 const router = express.Router();
 
-// caminho absoluto da pasta de upload
-const uploadDir = path.resolve(__dirname, "../uploads/products");
-
-// cria a pasta automaticamente se não existir
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-    cb(null, fileName);
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
   },
 });
-
-const upload = multer({ storage });
 
 router.get("/", async (req, res) => {
   try {
@@ -39,10 +23,13 @@ router.get("/", async (req, res) => {
         p.discount,
         p.tag,
         p.category_id,
-        p.image_url,
         p.active,
         p.sort_order,
-        c.name AS category_name
+        c.name AS category_name,
+        CASE
+          WHEN p.image_data IS NOT NULL THEN CONCAT('/api/products/', p.id, '/image')
+          ELSE NULL
+        END AS image_url
       FROM products p
       LEFT JOIN categories c ON c.id = p.category_id
       ORDER BY p.sort_order ASC, p.name ASC
@@ -52,6 +39,32 @@ router.get("/", async (req, res) => {
   } catch (error) {
     console.error("Erro ao listar produtos:", error);
     res.status(500).json({ message: "Erro ao listar produtos." });
+  }
+});
+
+router.get("/:id/image", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await pool.execute(
+      `
+      SELECT image_data, image_mime_type
+      FROM products
+      WHERE id = ?
+      `,
+      [id]
+    );
+
+    if (!rows.length || !rows[0].image_data) {
+      return res.status(404).send("Imagem não encontrada.");
+    }
+
+    res.setHeader("Content-Type", rows[0].image_mime_type || "application/octet-stream");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    return res.send(rows[0].image_data);
+  } catch (error) {
+    console.error("Erro ao buscar imagem do produto:", error);
+    res.status(500).send("Erro ao buscar imagem.");
   }
 });
 
@@ -72,13 +85,26 @@ router.post("/", authRequired, adminOnly, upload.single("image"), async (req, re
       return res.status(400).json({ message: "Nome e preço são obrigatórios." });
     }
 
-    const imageUrl = req.file ? `/uploads/products/${req.file.filename}` : null;
+    const imageData = req.file ? req.file.buffer : null;
+    const imageMimeType = req.file ? req.file.mimetype : null;
 
     await pool.execute(
       `
       INSERT INTO products
-      (name, price, old_price, discount, tag, category_id, image_url, active, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (
+        name,
+        price,
+        old_price,
+        discount,
+        tag,
+        category_id,
+        image_url,
+        image_data,
+        image_mime_type,
+        active,
+        sort_order
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         name,
@@ -87,7 +113,9 @@ router.post("/", authRequired, adminOnly, upload.single("image"), async (req, re
         discount ? Number(discount) : null,
         tag || null,
         category_id || null,
-        imageUrl,
+        null,
+        imageData,
+        imageMimeType,
         active === "true" ? 1 : 0,
         sort_order ? Number(sort_order) : 0,
       ]
@@ -131,8 +159,8 @@ router.put("/:id", authRequired, adminOnly, upload.single("image"), async (req, 
     ];
 
     if (req.file) {
-      imageSql = ", image_url = ?";
-      params.push(`/uploads/products/${req.file.filename}`);
+      imageSql = ", image_data = ?, image_mime_type = ?, image_url = NULL";
+      params.push(req.file.buffer, req.file.mimetype);
     }
 
     params.push(id);

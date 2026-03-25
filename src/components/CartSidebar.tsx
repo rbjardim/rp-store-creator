@@ -61,46 +61,47 @@ const CartSidebar = () => {
   };
 
   const handleCheckout = async () => {
-    try {
-      if (items.length === 0) {
-        alert("Seu carrinho está vazio.");
-        return;
-      }
-
-      setLoadingCheckout(true);
-
-      const res = await fetch(`${API_URL}/checkout/create-preference`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          items: items.map((item) => ({
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-          })),
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data?.message || "Erro ao iniciar pagamento");
-      }
-
-      if (!data?.init_point) {
-        throw new Error("Mercado Pago não retornou a URL de pagamento.");
-      }
-
-      window.location.href = data.init_point;
-    } catch (err: any) {
-      console.error("Erro checkout:", err);
-      alert(err.message || "Erro ao finalizar compra");
-    } finally {
-      setLoadingCheckout(false);
+  try {
+    if (items.length === 0) {
+      alert("Seu carrinho está vazio.");
+      return;
     }
-  };
+
+    setLoadingCheckout(true);
+
+    const res = await fetch(`${API_URL}/checkout/create-preference`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        items: items.map((item) => ({
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+        })),
+        couponCode: appliedCoupon?.code || null,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.message || "Erro ao iniciar pagamento");
+    }
+
+    if (!data?.init_point) {
+      throw new Error("Mercado Pago não retornou a URL de pagamento.");
+    }
+
+    window.location.href = data.init_point;
+  } catch (err: any) {
+    console.error("Erro checkout:", err);
+    alert(err.message || "Erro ao finalizar compra");
+  } finally {
+    setLoadingCheckout(false);
+  }
+};
 
   const discount = appliedCoupon
     ? total * (appliedCoupon.discount_percent / 100)

@@ -18,7 +18,13 @@ console.log("JWT_SECRET:", process.env.JWT_SECRET);
 const app = express();
 
 // parsers
-app.use(cors());
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "https://rp-store-creator.vercel.app"
+  ],
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

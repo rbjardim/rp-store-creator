@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, API_URL } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Pencil,
   Trash2,
@@ -91,7 +91,7 @@ const AdminProducts = () => {
     );
   };
 
-  const authFetch = async (url: string, options: RequestInit = {}) => {
+  const authFetch = async <T = any>(url: string, options: RequestInit = {}): Promise<T> => {
     const token = getToken();
 
     const headers = new Headers(options.headers || {});
@@ -129,11 +129,14 @@ const AdminProducts = () => {
   });
 
   const categoryMap = useMemo(() => {
-    return new Map(categories.map((c) => [c.id, c.name]));
+    return new Map(categories.map((c) => [String(c.id), c.name]));
   }, [categories]);
 
   const formatPrice = (value?: number | null) => {
-    if (value === null || value === undefined || Number.isNaN(value)) return "R$ 0,00";
+    if (value === null || value === undefined || Number.isNaN(value)) {
+      return "R$ 0,00";
+    }
+
     return value.toLocaleString("pt-BR", {
       style: "currency",
       currency: "BRL",
@@ -158,18 +161,20 @@ const AdminProducts = () => {
 
   const openEditForm = (product: Product) => {
     setEditId(product.id);
+
     setForm({
       name: product.name ?? "",
       price: product.price != null ? String(product.price) : "",
       old_price: product.old_price != null ? String(product.old_price) : "",
       discount: product.discount != null ? String(product.discount) : "",
       tag: product.tag ?? "",
-      category_id: product.category_id ?? "",
+      category_id: product.category_id != null ? String(product.category_id) : "",
       active: product.active ?? true,
       sort_order: product.sort_order ?? 0,
       description: product.description ?? "",
       existingImageUrl: product.image_url ?? "",
     });
+
     setSelectedFile(null);
     setPreviewUrl(product.image_url ?? "");
     setShowForm(true);
@@ -185,6 +190,14 @@ const AdminProducts = () => {
       setPreviewUrl(form.existingImageUrl || "");
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl && previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -207,8 +220,11 @@ const AdminProducts = () => {
       body.append("sort_order", String(Number(form.sort_order) || 0));
       body.append("description", form.description.trim());
 
+      // ajuda o backend a saber se deve manter a imagem atual ao editar
+      body.append("keep_image", selectedFile ? "false" : "true");
+
       if (selectedFile) {
-        body.append("image", selectedFile);
+        body.append("image", selectedFile, selectedFile.name);
       }
 
       const url = editId ? `${API_URL}/products/${editId}` : `${API_URL}/products`;
@@ -225,7 +241,9 @@ const AdminProducts = () => {
 
       toast({
         title: "Sucesso",
-        description: editId ? "Produto atualizado com sucesso." : "Produto criado com sucesso.",
+        description: editId
+          ? "Produto atualizado com sucesso."
+          : "Produto criado com sucesso.",
       });
 
       resetForm();
@@ -391,7 +409,7 @@ const AdminProducts = () => {
               >
                 <option value="">Sem categoria</option>
                 {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
+                  <option key={category.id} value={String(category.id)}>
                     {category.name}
                   </option>
                 ))}
@@ -405,7 +423,14 @@ const AdminProducts = () => {
 
               <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-white/15 bg-zinc-950 px-4 py-4 text-sm text-zinc-300 transition hover:border-red-500/40">
                 <Upload className="h-5 w-5 text-red-400" />
-                <span>{selectedFile ? selectedFile.name : "Clique para anexar uma imagem"}</span>
+                <span>
+                  {selectedFile
+                    ? selectedFile.name
+                    : form.existingImageUrl
+                    ? "Imagem atual carregada. Clique para trocar."
+                    : "Clique para anexar uma imagem"}
+                </span>
+
                 <input
                   type="file"
                   accept="image/*"
@@ -459,11 +484,7 @@ const AdminProducts = () => {
             <div className="mt-5">
               <p className="mb-2 text-sm text-zinc-400">Pré-visualização da imagem</p>
               <img
-                src={
-                  previewUrl.startsWith("blob:")
-                    ? previewUrl
-                    : getImageUrl(previewUrl)
-                }
+                src={previewUrl.startsWith("blob:") ? previewUrl : getImageUrl(previewUrl)}
                 alt="Prévia"
                 className="h-32 w-32 rounded-xl border border-white/10 object-cover"
               />
@@ -497,9 +518,7 @@ const AdminProducts = () => {
       <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-bold text-white">Lista de produtos</h3>
-          <span className="text-sm text-zinc-400">
-            {products.length} produto(s)
-          </span>
+          <span className="text-sm text-zinc-400">{products.length} produto(s)</span>
         </div>
 
         {loadingProducts || loadingCategories ? (
@@ -542,7 +561,7 @@ const AdminProducts = () => {
 
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
                           <span>
-                            {categoryMap.get(product.category_id || "") ||
+                            {categoryMap.get(String(product.category_id || "")) ||
                               product.category_name ||
                               "Sem categoria"}
                           </span>

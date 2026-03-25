@@ -122,9 +122,17 @@ router.post("/", authRequired, adminOnly, upload.single("image"), async (req, re
     );
 
     res.status(201).json({ message: "Produto criado com sucesso." });
-  } catch (error) {
+    } catch (error) {
     console.error("Erro ao criar produto:", error);
-    res.status(500).json({ message: "Erro ao criar produto." });
+    console.error("Mensagem:", error.message);
+    console.error("SQL Message:", error.sqlMessage);
+    console.error("SQL Code:", error.code);
+    res.status(500).json({
+      message: "Erro ao criar produto.",
+      error: error.message,
+      sqlMessage: error.sqlMessage,
+      code: error.code,
+    });
   }
 });
 

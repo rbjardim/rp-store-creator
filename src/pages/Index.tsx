@@ -18,6 +18,7 @@ type Product = {
   image_url: string;
   category_id?: string | null;
   tag: string;
+  active: number;
 };
 
 type Category = {
@@ -35,16 +36,19 @@ const Index = () => {
     queryFn: async () => {
       const data = await apiFetch<any[]>("/products");
 
-      return data.map((item) => ({
-        id: item.id,
-        name: item.name,
-        price: Number(item.price ?? 0),
-        old_price: Number(item.old_price ?? 0),
-        discount: Number(item.discount ?? 0),
-        image_url: item.image_url ?? "",
-        category_id: item.category_id ?? null,
-        tag: item.tag ?? "",
-      }));
+      return data
+        .map((item) => ({
+          id: item.id,
+          name: item.name,
+          price: Number(item.price ?? 0),
+          old_price: Number(item.old_price ?? 0),
+          discount: Number(item.discount ?? 0),
+          image_url: item.image_url ?? "",
+          category_id: item.category_id ?? null,
+          tag: item.tag ?? "",
+          active: Number(item.active ?? 0),
+        }))
+        .filter((item) => item.active === 1);
     },
   });
 

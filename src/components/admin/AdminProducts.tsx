@@ -134,7 +134,7 @@ const AdminProducts = () => {
 
   const { data: products = [], isLoading: loadingProducts } = useQuery({
     queryKey: ["admin-products"],
-    queryFn: () => apiFetch<Product[]>("/products"),
+    queryFn: () => apiFetch<Product[]>("/products?admin=true"),
   });
 
   const { data: categories = [], isLoading: loadingCategories } = useQuery({

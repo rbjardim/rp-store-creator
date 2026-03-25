@@ -87,7 +87,7 @@ router.post("/", authRequired, adminOnly, upload.single("image"), async (req, re
       return res.status(400).json({ message: "Nome e preço são obrigatórios." });
     }
 
-    const id = uuidv4(); // 🔥 AQUI
+    const id = uuidv4();
 
     const imageData = req.file ? req.file.buffer : null;
     const imageMimeType = req.file ? req.file.mimetype : null;
@@ -129,7 +129,7 @@ router.post("/", authRequired, adminOnly, upload.single("image"), async (req, re
       ]
     );
 
-    res.status(201).json({ message: "Produto criado com sucesso." });
+    res.status(201).json({ message: "Produto criado com sucesso.", id });
   } catch (error) {
     console.error("🔥 ERRO AO CRIAR PRODUTO:");
     console.error(error);

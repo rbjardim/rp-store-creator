@@ -17,25 +17,36 @@ console.log("JWT_SECRET:", process.env.JWT_SECRET);
 
 const app = express();
 
-// parsers
-app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "https://loja.campolimporp.com.br",
-    "https://rp-store-creator.vercel.app"
-  ],
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://rp-store-creator.vercel.app",
+  "https://loja.campolimporp.com.br",
+];
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`Origin não permitida: ${origin}`));
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
-}));
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// servir arquivos enviados
 app.use("/uploads", express.static(path.resolve(__dirname, "uploads")));
 
-// debug temporário
 app.use((req, res, next) => {
   console.log("METHOD:", req.method, "URL:", req.url);
+  console.log("ORIGIN:", req.headers.origin);
   console.log("CONTENT-TYPE:", req.headers["content-type"]);
   next();
 });
@@ -67,7 +78,6 @@ app.get("/api/health", async (req, res) => {
   }
 });
 
-// rotas
 app.use("/api/auth", authRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/categories", categoriesRoutes);

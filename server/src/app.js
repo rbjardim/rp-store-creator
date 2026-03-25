@@ -21,8 +21,10 @@ const app = express();
 app.use(cors({
   origin: [
     "http://localhost:5173",
+    "https://loja.campolimporp.com.br",
     "https://rp-store-creator.vercel.app"
   ],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true,
 }));
 app.use(express.json());

@@ -2,6 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const pool = require("../db");
 const { authRequired, adminOnly } = require("../middlewares/auth");
+const { v4: uuidv4 } = require("uuid");
 
 const router = express.Router();
 
@@ -79,68 +80,66 @@ router.post("/", authRequired, adminOnly, upload.single("image"), async (req, re
       category_id,
       active,
       sort_order,
+      description,
     } = req.body;
 
     if (!name || !price) {
       return res.status(400).json({ message: "Nome e preço são obrigatórios." });
     }
 
+    const id = uuidv4(); // 🔥 AQUI
+
     const imageData = req.file ? req.file.buffer : null;
     const imageMimeType = req.file ? req.file.mimetype : null;
 
-    console.log("BODY:", req.body);
-    console.log("FILE:", req.file);
-
-      await pool.execute(
-    `
-    INSERT INTO products
-    (
-      name,
-      price,
-      old_price,
-      discount,
-      tag,
-      category_id,
-      image_url,
-      image_data,
-      image_mime_type,
-      active,
-      sort_order,
-      description
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    [
-      name,
-      Number(price),
-      old_price ? Number(old_price) : null,
-      discount ? Number(discount) : null,
-      tag || null,
-      category_id || null,
-      null,
-      imageData,
-      imageMimeType,
-      active === "true" ? 1 : 0,
-      sort_order ? Number(sort_order) : 0,
-      description || null,
-    ]
-  );
+    await pool.execute(
+      `
+      INSERT INTO products
+      (
+        id,
+        name,
+        price,
+        old_price,
+        discount,
+        tag,
+        category_id,
+        image_url,
+        image_data,
+        image_mime_type,
+        active,
+        sort_order,
+        description
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        id,
+        name,
+        Number(price),
+        old_price ? Number(old_price) : null,
+        discount ? Number(discount) : null,
+        tag || null,
+        category_id || null,
+        null,
+        imageData,
+        imageMimeType,
+        active === "true" ? 1 : 0,
+        sort_order ? Number(sort_order) : 0,
+        description || null,
+      ]
+    );
 
     res.status(201).json({ message: "Produto criado com sucesso." });
-    } catch (error) {
-      console.error("🔥 ERRO AO CRIAR PRODUTO:");
-      console.error(error);
-      console.error("Mensagem:", error.message);
-      console.error("SQL Message:", error.sqlMessage);
-      console.error("Code:", error.code);
-
-      res.status(500).json({
-        message: "Erro ao criar produto.",
-        error: error.message,
-        sqlMessage: error.sqlMessage,
-        code: error.code,
-      });
-    }
+  } catch (error) {
+    console.error("🔥 ERRO AO CRIAR PRODUTO:");
+    console.error(error);
+    res.status(500).json({
+      message: "Erro ao criar produto.",
+      error: error.message,
+      sqlMessage: error.sqlMessage,
+      code: error.code,
+    });
+  }
 });
 
 router.put("/:id", authRequired, adminOnly, upload.single("image"), async (req, res) => {
@@ -155,6 +154,7 @@ router.put("/:id", authRequired, adminOnly, upload.single("image"), async (req, 
       category_id,
       active,
       sort_order,
+      description,
     } = req.body;
 
     if (!name || !price) {

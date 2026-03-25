@@ -106,7 +106,7 @@ INSERT INTO public.store_settings (key, value) VALUES
   ('store_name', 'Campo Limpo Roleplay'),
   ('banner_text', 'Novos pacotes e recompensas exclusivas! Aproveite os descontos de inauguração 🎉'),
   ('hero_title', 'Campo Limpo Roleplay'),
-  ('hero_subtitle', 'A melhor experiência de GTA RP'),
+  ('hero_subtitle', 'O RP tema São Paulo do momento!'),
   ('logo_url', '');
 
 -- Insert default categories

@@ -1,17 +1,21 @@
-import { ShoppingCart, Search } from "lucide-react";
+import { ShoppingCart } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
+
+type StoreSettings = {
+  store_name?: string;
+  banner_text?: string;
+  logo_url?: string;
+};
 
 const StoreNavbar = () => {
   const { itemCount, setIsOpen } = useCart();
 
-  const { data: settings } = useQuery({
+  const { data: settings } = useQuery<StoreSettings>({
     queryKey: ["store-settings"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("store_settings").select("*");
-      if (error) throw error;
-      return Object.fromEntries(data.map((s) => [s.key, s.value]));
+      return apiFetch<StoreSettings>("/settings");
     },
   });
 
@@ -30,13 +34,23 @@ const StoreNavbar = () => {
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
           {logoUrl ? (
-            <img src={logoUrl} alt="Logo" className="h-10 w-10 rounded-lg object-cover" />
+            <img
+              src={logoUrl}
+              alt={storeName}
+              className="h-16 object-contain"
+            />
           ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent font-display text-xl text-accent-foreground">
-              CL
-            </div>
+            <>
+              <img
+                src="/logocl2.png"
+                alt={storeName}
+                className="h-16 object-contain"
+              />
+              <span className="font-display text-2xl tracking-wide text-foreground">
+                {storeName}
+              </span>
+            </>
           )}
-          <span className="font-display text-2xl tracking-wide text-foreground">{storeName}</span>
         </div>
 
         <button

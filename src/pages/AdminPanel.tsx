@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
 import AdminCategories from "@/components/admin/AdminCategories";
 import AdminProducts from "@/components/admin/AdminProducts";
 import AdminSettings from "@/components/admin/AdminSettings";
-import { LogOut, Settings, Package, FolderOpen } from "lucide-react";
+import AdminUsers from "@/components/admin/AdminUsers";
+import AdminCoupons from "@/components/admin/AdminCoupons";
+import { LogOut, Settings, Package, FolderOpen, Users } from "lucide-react";
 
-type Tab = "products" | "categories" | "settings";
+type Tab = "products" | "categories" | "users" | "coupons" | "settings";
 
 const AdminPanel = () => {
   const { user, isAdmin, loading, signOut } = useAuth();
@@ -35,6 +35,8 @@ const AdminPanel = () => {
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "products", label: "Produtos", icon: <Package className="h-4 w-4" /> },
     { id: "categories", label: "Categorias", icon: <FolderOpen className="h-4 w-4" /> },
+    { id: "users", label: "Usuários", icon: <Users className="h-4 w-4" /> },
+    { id: "coupons", label: "Cupons", icon: <Settings className="h-4 w-4" /> },
     { id: "settings", label: "Configurações", icon: <Settings className="h-4 w-4" /> },
   ];
 
@@ -86,6 +88,8 @@ const AdminPanel = () => {
       <div className="mx-auto max-w-6xl px-4 py-6">
         {activeTab === "products" && <AdminProducts />}
         {activeTab === "categories" && <AdminCategories />}
+        {activeTab === "users" && <AdminUsers />}
+        {activeTab === "coupons" && <AdminCoupons />}
         {activeTab === "settings" && <AdminSettings />}
       </div>
     </div>

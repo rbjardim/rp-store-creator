@@ -1,13 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
+
+type StoreSettings = {
+  store_name?: string;
+  logo_url?: string;
+};
 
 const StoreFooter = () => {
-  const { data: settings } = useQuery({
+  const { data: settings } = useQuery<StoreSettings>({
     queryKey: ["store-settings"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("store_settings").select("*");
-      if (error) throw error;
-      return Object.fromEntries(data.map((s) => [s.key, s.value]));
+      return apiFetch<StoreSettings>("/settings");
     },
   });
 
@@ -17,16 +20,29 @@ const StoreFooter = () => {
   return (
     <footer className="border-t border-border bg-background py-8">
       <div className="mx-auto max-w-7xl px-4 text-center">
-        <div className="flex items-center justify-center gap-3 mb-4">
+        <div className="flex items-center justify-center mb-4">
           {logoUrl ? (
-            <img src={logoUrl} alt="Logo" className="h-8 rounded" />
+            <img
+              src={logoUrl}
+              alt={storeName}
+              className="h-16 object-contain"
+            />
           ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded bg-accent font-display text-sm text-accent-foreground">CL</div>
+            <img
+              src="/logocl.png"
+              alt={storeName}
+              className="h-16 object-contain"
+            />
           )}
-          <span className="font-display text-xl tracking-wide text-foreground">{storeName}</span>
         </div>
-        <p className="text-sm text-muted-foreground">© 2026 {storeName}. Todos os direitos reservados.</p>
-        <p className="mt-1 text-xs text-muted-foreground">Este site não é afiliado à Rockstar Games ou Take-Two Interactive.</p>
+
+        <p className="text-sm text-muted-foreground">
+          © {storeName}. Todos os direitos reservados. - 1.0.0.0126
+        </p>
+
+        <p className="mt-1 text-xs text-muted-foreground">
+          Este site não é afiliado à Rockstar Games ou Take-Two Interactive.
+        </p>
       </div>
     </footer>
   );

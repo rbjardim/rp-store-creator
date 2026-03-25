@@ -19,7 +19,7 @@ const StoreNavbar = () => {
     },
   });
 
-  const storeName = settings?.store_name || "Campo Limpo Roleplay";
+  const storeName = settings?.store_name || "";
   const bannerText = settings?.banner_text || "";
   const logoUrl = settings?.logo_url || "";
 

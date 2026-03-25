@@ -13,7 +13,6 @@ dist-ssr
 .env
 dist
 build
-uploads
 *.local
 
 # Editor directories and files

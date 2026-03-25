@@ -24,28 +24,54 @@ function parseActive(value) {
 
 router.get("/", async (req, res) => {
   try {
-    const [rows] = await pool.execute(`
-      SELECT 
-        p.id,
-        p.name,
-        p.price,
-        p.old_price,
-        p.discount,
-        p.tag,
-        p.category_id,
-        p.active,
-        p.sort_order,
-        p.description,
-        c.name AS category_name,
-        CASE
-          WHEN p.image_data IS NOT NULL THEN CONCAT('/api/products/', p.id, '/image')
-          ELSE NULL
-        END AS image_url
-      FROM products p
-      LEFT JOIN categories c ON c.id = p.category_id
-      ORDER BY p.sort_order ASC, p.name ASC
-    `);
+    const isAdminView = req.query.admin === "true";
 
+    const sql = isAdminView
+      ? `
+        SELECT 
+          p.id,
+          p.name,
+          p.price,
+          p.old_price,
+          p.discount,
+          p.tag,
+          p.category_id,
+          p.active,
+          p.sort_order,
+          p.description,
+          c.name AS category_name,
+          CASE
+            WHEN p.image_data IS NOT NULL THEN CONCAT('/api/products/', p.id, '/image')
+            ELSE NULL
+          END AS image_url
+        FROM products p
+        LEFT JOIN categories c ON c.id = p.category_id
+        ORDER BY p.sort_order ASC, p.name ASC
+      `
+      : `
+        SELECT 
+          p.id,
+          p.name,
+          p.price,
+          p.old_price,
+          p.discount,
+          p.tag,
+          p.category_id,
+          p.active,
+          p.sort_order,
+          p.description,
+          c.name AS category_name,
+          CASE
+            WHEN p.image_data IS NOT NULL THEN CONCAT('/api/products/', p.id, '/image')
+            ELSE NULL
+          END AS image_url
+        FROM products p
+        LEFT JOIN categories c ON c.id = p.category_id
+        WHERE p.active = 1
+        ORDER BY p.sort_order ASC, p.name ASC
+      `;
+
+    const [rows] = await pool.execute(sql);
     res.json(rows);
   } catch (error) {
     console.error("Erro ao listar produtos:", error);

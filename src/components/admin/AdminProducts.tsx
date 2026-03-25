@@ -69,7 +69,9 @@ const getImageUrl = (imageUrl?: string | null) => {
     return imageUrl;
   }
 
-  return `${API_URL}${imageUrl}`;
+  const base = API_URL.replace(/\/api$/, ""); // remove o /api do final
+
+  return `${base}${imageUrl}`;
 };
 
 const AdminProducts = () => {

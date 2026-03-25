@@ -8,17 +8,15 @@ const client = new mercadopago.MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN,
 });
 
-// ============================
-// Helper
-// ============================
 function toMoney(value) {
   const number = Number(value);
   return Number.isNaN(number) ? 0 : number;
 }
 
-// ============================
-// Criar pagamento
-// ============================
+function round2(value) {
+  return Number(Number(value).toFixed(2));
+}
+
 router.post("/create-preference", async (req, res) => {
   let connection;
 
@@ -26,20 +24,20 @@ router.post("/create-preference", async (req, res) => {
     console.log("CHECKOUT NOVO EXECUTADO");
     console.log("BODY:", req.body);
 
-    const { items } = req.body;
+    const { items, couponCode } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Carrinho vazio" });
     }
 
-    const formattedItems = items.map((item) => ({
+    const normalizedItems = items.map((item) => ({
       title: String(item.name || "").trim(),
       quantity: Number(item.quantity),
       currency_id: "BRL",
       unit_price: toMoney(item.price),
     }));
 
-    const hasInvalidItem = formattedItems.some(
+    const hasInvalidItem = normalizedItems.some(
       (item) =>
         !item.title ||
         Number.isNaN(item.quantity) ||
@@ -49,38 +47,114 @@ router.post("/create-preference", async (req, res) => {
     );
 
     if (hasInvalidItem) {
-      return res.status(400).json({
-        message: "Itens inválidos no carrinho",
-      });
+      return res.status(400).json({ message: "Itens inválidos no carrinho" });
     }
 
-    const totalAmount = formattedItems.reduce((total, item) => {
-      return total + item.quantity * item.unit_price;
-    }, 0);
+    const subtotal = round2(
+      normalizedItems.reduce((total, item) => {
+        return total + item.quantity * item.unit_price;
+      }, 0)
+    );
 
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // cria pedido (nome será atualizado depois via Mercado Pago)
+    let coupon = null;
+    let discountPercent = 0;
+    let discountAmount = 0;
+
+    if (couponCode && String(couponCode).trim()) {
+      const [couponRows] = await connection.execute(
+        `
+        SELECT id, code, discount_percent, active
+        FROM coupons
+        WHERE UPPER(code) = UPPER(?)
+        LIMIT 1
+        `,
+        [String(couponCode).trim()]
+      );
+
+      if (!couponRows.length) {
+        await connection.rollback();
+        return res.status(400).json({ message: "Cupom não encontrado." });
+      }
+
+      coupon = couponRows[0];
+
+      if (!coupon.active) {
+        await connection.rollback();
+        return res.status(400).json({ message: "Cupom inativo." });
+      }
+
+      discountPercent = Number(coupon.discount_percent || 0);
+      discountAmount = round2((subtotal * discountPercent) / 100);
+    }
+
+    const totalAmount = round2(subtotal - discountAmount);
+
+    if (totalAmount <= 0) {
+      await connection.rollback();
+      return res.status(400).json({ message: "Total inválido após aplicar o cupom." });
+    }
+
+    // distribui o desconto proporcionalmente entre os itens
+    let remainingDiscount = discountAmount;
+
+    const formattedItems = normalizedItems.map((item, index) => {
+      const itemTotal = round2(item.unit_price * item.quantity);
+
+      let itemDiscount = 0;
+      if (discountAmount > 0) {
+        if (index === normalizedItems.length - 1) {
+          itemDiscount = remainingDiscount;
+        } else {
+          itemDiscount = round2((itemTotal / subtotal) * discountAmount);
+          remainingDiscount = round2(remainingDiscount - itemDiscount);
+        }
+      }
+
+      const finalLineTotal = round2(itemTotal - itemDiscount);
+      const finalUnitPrice = round2(finalLineTotal / item.quantity);
+
+      return {
+        title: item.title,
+        quantity: item.quantity,
+        currency_id: "BRL",
+        unit_price: finalUnitPrice,
+        original_unit_price: item.unit_price,
+        line_total: finalLineTotal,
+      };
+    });
+
     const [orderResult] = await connection.execute(
       `
       INSERT INTO orders (
         customer_name,
         customer_email,
         total_amount,
-        status
-      ) VALUES (?, ?, ?, ?)
+        status,
+        coupon_code,
+        discount_percent,
+        discount_amount,
+        subtotal_amount
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      ["Cliente", null, totalAmount, "pending"]
+      [
+        "Cliente",
+        null,
+        totalAmount,
+        "pending",
+        coupon ? coupon.code : null,
+        discountPercent || 0,
+        discountAmount || 0,
+        subtotal,
+      ]
     );
 
     const orderId = orderResult.insertId;
     const externalReference = String(orderId);
 
-    // salva itens
     for (const item of formattedItems) {
-      const lineTotal = item.quantity * item.unit_price;
-
       await connection.execute(
         `
         INSERT INTO order_items (
@@ -96,33 +170,32 @@ router.post("/create-preference", async (req, res) => {
           item.title,
           item.quantity,
           item.unit_price,
-          lineTotal,
+          item.line_total,
         ]
       );
     }
 
-    // cria preferência Mercado Pago
     const preference = new mercadopago.Preference(client);
 
     const result = await preference.create({
       body: {
-        items: formattedItems,
+        items: formattedItems.map((item) => ({
+          title: item.title,
+          quantity: item.quantity,
+          currency_id: item.currency_id,
+          unit_price: item.unit_price,
+        })),
         external_reference: externalReference,
-
         back_urls: {
           success: "https://loja.campolimporp.com.br/sucesso",
           failure: "https://loja.campolimporp.com.br/erro",
           pending: "https://loja.campolimporp.com.br/pendente",
         },
-
         auto_return: "approved",
-
-        notification_url:
-          "https://api.campolimporp.com.br/api/checkout/webhook",
+        notification_url: "https://api.campolimporp.com.br/api/checkout/webhook",
       },
     });
 
-    // atualiza pedido com dados do MP
     await connection.execute(
       `
       UPDATE orders
@@ -140,7 +213,6 @@ router.post("/create-preference", async (req, res) => {
       ]
     );
 
-    // log inicial
     await connection.execute(
       `
       INSERT INTO payment_logs (
@@ -156,7 +228,9 @@ router.post("/create-preference", async (req, res) => {
         orderId,
         "Cliente",
         "order_created",
-        `Pedido criado com ${formattedItems.length} item(ns)`,
+        coupon
+          ? `Pedido criado com ${formattedItems.length} item(ns) | Cupom ${coupon.code} aplicado`
+          : `Pedido criado com ${formattedItems.length} item(ns)`,
         totalAmount,
         "pending",
       ]
@@ -168,6 +242,10 @@ router.post("/create-preference", async (req, res) => {
       orderId,
       init_point: result.init_point,
       sandbox_init_point: result.sandbox_init_point,
+      subtotal,
+      discount_amount: discountAmount,
+      total_amount: totalAmount,
+      coupon_code: coupon ? coupon.code : null,
     });
   } catch (error) {
     if (connection) await connection.rollback();
@@ -178,157 +256,6 @@ router.post("/create-preference", async (req, res) => {
       message: "Erro ao criar pagamento",
       error: error.message,
     });
-  } finally {
-    if (connection) connection.release();
-  }
-});
-
-// ============================
-// Webhook Mercado Pago
-// ============================
-router.post("/webhook", async (req, res) => {
-  let connection;
-
-  try {
-    console.log("WEBHOOK RECEBIDO:", req.body);
-
-    const paymentId = req.body?.data?.id;
-    const type = req.body?.type;
-
-    if (type !== "payment" || !paymentId) {
-      return res.sendStatus(200);
-    }
-
-    const paymentApi = new mercadopago.Payment(client);
-
-    const paymentResponse = await paymentApi.get({ id: paymentId });
-    const payment = paymentResponse?.response || paymentResponse;
-
-    const paymentStatus = payment?.status;
-    const externalReference = payment?.external_reference;
-    const transactionAmount = Number(payment?.transaction_amount || 0);
-
-    // 👇 pega dados do Mercado Pago
-    const payer = payment?.payer || {};
-    const firstName = payer.first_name || "";
-    const lastName = payer.last_name || "";
-    const email = payer.email || "";
-
-    const customerName =
-      `${firstName} ${lastName}`.trim() || email || "Cliente";
-
-    if (!externalReference) {
-      return res.sendStatus(200);
-    }
-
-    connection = await pool.getConnection();
-    await connection.beginTransaction();
-
-    const [orders] = await connection.execute(
-      `SELECT * FROM orders WHERE id = ? LIMIT 1`,
-      [externalReference]
-    );
-
-    if (!orders.length) {
-      await connection.commit();
-      return res.sendStatus(200);
-    }
-
-    const order = orders[0];
-
-    const [items] = await connection.execute(
-      `SELECT * FROM order_items WHERE order_id = ?`,
-      [order.id]
-    );
-
-    const itemsDescription = items
-      .map(
-        (item) =>
-          `${item.product_name} x${item.quantity} - R$ ${Number(
-            item.line_total
-          ).toFixed(2)}`
-      )
-      .join(" | ");
-
-    if (paymentStatus === "approved") {
-      if (order.status !== "paid") {
-        await connection.execute(
-          `
-          UPDATE orders
-          SET
-            status = 'paid',
-            payment_id = ?,
-            customer_name = ?,
-            customer_email = ?,
-            total_amount = ?
-          WHERE id = ?
-          `,
-          [
-            String(paymentId),
-            customerName,
-            email || null,
-            transactionAmount,
-            order.id,
-          ]
-        );
-
-        await connection.execute(
-          `
-          INSERT INTO payment_logs (
-            order_id,
-            customer_name,
-            action,
-            description,
-            amount,
-            payment_id,
-            payment_status
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
-          `,
-          [
-            order.id,
-            customerName,
-            "payment_approved",
-            `Cliente ${customerName} (${email}) pediu: ${itemsDescription}`,
-            transactionAmount,
-            String(paymentId),
-            paymentStatus,
-          ]
-        );
-
-        console.log("PAGAMENTO APROVADO:", order.id);
-      }
-    } else {
-      await connection.execute(
-        `
-        INSERT INTO payment_logs (
-          order_id,
-          customer_name,
-          action,
-          description,
-          amount,
-          payment_id,
-          payment_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `,
-        [
-          order.id,
-          customerName,
-          "payment_update",
-          `Status: ${paymentStatus} | ${itemsDescription}`,
-          transactionAmount,
-          String(paymentId),
-          paymentStatus,
-        ]
-      );
-    }
-
-    await connection.commit();
-    return res.sendStatus(200);
-  } catch (error) {
-    if (connection) await connection.rollback();
-
-    console.error("Erro webhook:", error);
-    return res.sendStatus(500);
   } finally {
     if (connection) connection.release();
   }

@@ -91,32 +91,44 @@ const AdminProducts = () => {
     );
   };
 
-  const authFetch = async <T = any>(url: string, options: RequestInit = {}): Promise<T> => {
-    const token = getToken();
+  const authFetch = async (url: string, options: RequestInit = {}) => {
+  const token = getToken();
 
-    const headers = new Headers(options.headers || {});
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
+  const headers = new Headers(options.headers || {});
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+  const response = await fetch(url, {
+    ...options,
+    headers,
+  });
 
-    let data: any = null;
-    try {
-      data = await response.json();
-    } catch {
-      data = null;
-    }
+  const rawText = await response.text();
+  let data: any = null;
 
-    if (!response.ok) {
-      throw new Error(data?.message || "Erro na requisição.");
-    }
+  try {
+    data = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    data = rawText;
+  }
 
-    return data;
-  };
+  console.log("STATUS:", response.status);
+  console.log("RESPOSTA BRUTA:", rawText);
+  console.log("RESPOSTA PARSEADA:", data);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.sqlMessage ||
+      data?.error ||
+      data?.message ||
+      rawText ||
+      "Erro na requisição."
+    );
+  }
+
+  return data;
+};
 
   const { data: products = [], isLoading: loadingProducts } = useQuery({
     queryKey: ["admin-products"],
@@ -249,6 +261,8 @@ const AdminProducts = () => {
       resetForm();
     },
     onError: (error: any) => {
+      console.error("ERRO AO SALVAR PRODUTO:", error);
+
       toast({
         title: "Erro ao salvar",
         description: error?.message || "Não foi possível salvar o produto.",

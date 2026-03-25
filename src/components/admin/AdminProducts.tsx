@@ -69,7 +69,7 @@ const getImageUrl = (imageUrl?: string | null) => {
     return imageUrl;
   }
 
-  return `${API_URL.replace("/api", "")}${imageUrl}`;
+  return `${API_URL}${imageUrl}`; // ✅ CORRETO
 };
 
 const AdminProducts = () => {

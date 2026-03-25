@@ -5,8 +5,12 @@ import { API_URL } from "@/lib/api";
 
 const getImageUrl = (imageUrl?: string | null) => {
   if (!imageUrl) return "";
-  if (imageUrl.startsWith("http")) return imageUrl;
-  return `${API_URL.replace("/api", "")}${imageUrl}`;
+
+  if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+    return imageUrl;
+  }
+
+  return `${API_URL}${imageUrl}`;
 };
 
 const CartSidebar = () => {

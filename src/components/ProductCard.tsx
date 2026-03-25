@@ -14,12 +14,14 @@ type Props = {
   };
 };
 
-const getImageUrl = (imageUrl: string | null) => {
-  if (!imageUrl) return null;
+const getImageUrl = (imageUrl?: string | null) => {
+  if (!imageUrl) return "";
+
   if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
     return imageUrl;
   }
-  return `${API_URL.replace("/api", "")}${imageUrl}`;
+
+  return `${API_URL}${imageUrl}`;
 };
 
 const ProductCard = ({ product }: Props) => {

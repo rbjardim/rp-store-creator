@@ -110,9 +110,9 @@ router.post("/create-preference", async (req, res) => {
         external_reference: externalReference,
 
         back_urls: {
-          success: "https://campolimporp.com.br/sucesso",
-          failure: "https://campolimporp.com.br/erro",
-          pending: "https://campolimporp.com.br/pendente",
+          success: "https://loja.campolimporp.com.br/sucesso",
+          failure: "https://loja.campolimporp.com.br/erro",
+          pending: "https://loja.campolimporp.com.br/pendente",
         },
 
         auto_return: "approved",

@@ -70,6 +70,6 @@ app.use("/api/checkout", checkoutRoutes);
 
 const PORT = process.env.PORT || 3001;
 
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`API rodando em http://127.0.0.1:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`API rodando na porta ${PORT}`);
 });

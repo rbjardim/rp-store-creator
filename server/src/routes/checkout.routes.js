@@ -8,20 +8,25 @@ const client = new mercadopago.MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN,
 });
 
+// ============================
+// Helper
+// ============================
 function toMoney(value) {
   const number = Number(value);
   return Number.isNaN(number) ? 0 : number;
 }
 
+// ============================
+// Criar pagamento
+// ============================
 router.post("/create-preference", async (req, res) => {
   let connection;
 
   try {
-    const { items, customerName, customerEmail } = req.body;
+    console.log("CHECKOUT NOVO EXECUTADO");
+    console.log("BODY:", req.body);
 
-    if (!customerName || !customerName.trim()) {
-      return res.status(400).json({ message: "Nome do cliente é obrigatório" });
-    }
+    const { items } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Carrinho vazio" });
@@ -45,7 +50,7 @@ router.post("/create-preference", async (req, res) => {
 
     if (hasInvalidItem) {
       return res.status(400).json({
-        message: "Há itens inválidos no carrinho",
+        message: "Itens inválidos no carrinho",
       });
     }
 
@@ -56,6 +61,7 @@ router.post("/create-preference", async (req, res) => {
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
+    // cria pedido (nome será atualizado depois via Mercado Pago)
     const [orderResult] = await connection.execute(
       `
       INSERT INTO orders (
@@ -65,17 +71,13 @@ router.post("/create-preference", async (req, res) => {
         status
       ) VALUES (?, ?, ?, ?)
       `,
-      [
-        customerName.trim(),
-        customerEmail ? customerEmail.trim() : null,
-        totalAmount,
-        "pending",
-      ]
+      ["Cliente", null, totalAmount, "pending"]
     );
 
     const orderId = orderResult.insertId;
     const externalReference = String(orderId);
 
+    // salva itens
     for (const item of formattedItems) {
       const lineTotal = item.quantity * item.unit_price;
 
@@ -99,22 +101,28 @@ router.post("/create-preference", async (req, res) => {
       );
     }
 
+    // cria preferência Mercado Pago
     const preference = new mercadopago.Preference(client);
 
     const result = await preference.create({
       body: {
         items: formattedItems,
         external_reference: externalReference,
+
         back_urls: {
           success: "https://campolimporp.com.br/sucesso",
           failure: "https://campolimporp.com.br/erro",
           pending: "https://campolimporp.com.br/pendente",
         },
+
         auto_return: "approved",
-        notification_url: "https://api.campolimporp.com.br/api/checkout/webhook",
+
+        notification_url:
+          "https://api.campolimporp.com.br/api/checkout/webhook",
       },
     });
 
+    // atualiza pedido com dados do MP
     await connection.execute(
       `
       UPDATE orders
@@ -132,6 +140,7 @@ router.post("/create-preference", async (req, res) => {
       ]
     );
 
+    // log inicial
     await connection.execute(
       `
       INSERT INTO payment_logs (
@@ -145,9 +154,9 @@ router.post("/create-preference", async (req, res) => {
       `,
       [
         orderId,
-        customerName.trim(),
+        "Cliente",
         "order_created",
-        `Pedido criado com ${formattedItems.length} item(ns). Aguardando pagamento.`,
+        `Pedido criado com ${formattedItems.length} item(ns)`,
         totalAmount,
         "pending",
       ]
@@ -161,28 +170,27 @@ router.post("/create-preference", async (req, res) => {
       sandbox_init_point: result.sandbox_init_point,
     });
   } catch (error) {
-    if (connection) {
-      await connection.rollback();
-    }
+    if (connection) await connection.rollback();
 
-    console.error("Erro Mercado Pago ao criar preferência:", error);
+    console.error("Erro ao criar pagamento:", error);
 
     return res.status(500).json({
       message: "Erro ao criar pagamento",
       error: error.message,
     });
   } finally {
-    if (connection) {
-      connection.release();
-    }
+    if (connection) connection.release();
   }
 });
 
+// ============================
+// Webhook Mercado Pago
+// ============================
 router.post("/webhook", async (req, res) => {
   let connection;
 
   try {
-    console.log("Webhook Mercado Pago recebido:", req.body);
+    console.log("WEBHOOK RECEBIDO:", req.body);
 
     const paymentId = req.body?.data?.id;
     const type = req.body?.type;
@@ -193,20 +201,23 @@ router.post("/webhook", async (req, res) => {
 
     const paymentApi = new mercadopago.Payment(client);
 
-    const paymentResponse = await paymentApi.get({
-      id: paymentId,
-    });
-
+    const paymentResponse = await paymentApi.get({ id: paymentId });
     const payment = paymentResponse?.response || paymentResponse;
 
-    console.log("Pagamento consultado:", payment);
-
-    const paymentStatus = payment?.status || null;
-    const externalReference = payment?.external_reference || null;
+    const paymentStatus = payment?.status;
+    const externalReference = payment?.external_reference;
     const transactionAmount = Number(payment?.transaction_amount || 0);
 
+    // 👇 pega dados do Mercado Pago
+    const payer = payment?.payer || {};
+    const firstName = payer.first_name || "";
+    const lastName = payer.last_name || "";
+    const email = payer.email || "";
+
+    const customerName =
+      `${firstName} ${lastName}`.trim() || email || "Cliente";
+
     if (!externalReference) {
-      console.warn("Pagamento sem external_reference:", paymentId);
       return res.sendStatus(200);
     }
 
@@ -214,17 +225,11 @@ router.post("/webhook", async (req, res) => {
     await connection.beginTransaction();
 
     const [orders] = await connection.execute(
-      `
-      SELECT id, customer_name, status
-      FROM orders
-      WHERE id = ?
-      LIMIT 1
-      `,
+      `SELECT * FROM orders WHERE id = ? LIMIT 1`,
       [externalReference]
     );
 
     if (!orders.length) {
-      console.warn("Pedido não encontrado para external_reference:", externalReference);
       await connection.commit();
       return res.sendStatus(200);
     }
@@ -232,19 +237,16 @@ router.post("/webhook", async (req, res) => {
     const order = orders[0];
 
     const [items] = await connection.execute(
-      `
-      SELECT product_name, quantity, unit_price, line_total
-      FROM order_items
-      WHERE order_id = ?
-      ORDER BY id ASC
-      `,
+      `SELECT * FROM order_items WHERE order_id = ?`,
       [order.id]
     );
 
     const itemsDescription = items
       .map(
         (item) =>
-          `${item.product_name} x${item.quantity} - R$ ${Number(item.line_total).toFixed(2)}`
+          `${item.product_name} x${item.quantity} - R$ ${Number(
+            item.line_total
+          ).toFixed(2)}`
       )
       .join(" | ");
 
@@ -256,10 +258,18 @@ router.post("/webhook", async (req, res) => {
           SET
             status = 'paid',
             payment_id = ?,
+            customer_name = ?,
+            customer_email = ?,
             total_amount = ?
           WHERE id = ?
           `,
-          [String(paymentId), transactionAmount, order.id]
+          [
+            String(paymentId),
+            customerName,
+            email || null,
+            transactionAmount,
+            order.id,
+          ]
         );
 
         await connection.execute(
@@ -276,16 +286,16 @@ router.post("/webhook", async (req, res) => {
           `,
           [
             order.id,
-            order.customer_name,
+            customerName,
             "payment_approved",
-            `Cliente ${order.customer_name} pediu: ${itemsDescription}`,
+            `Cliente ${customerName} (${email}) pediu: ${itemsDescription}`,
             transactionAmount,
             String(paymentId),
             paymentStatus,
           ]
         );
 
-        console.log(`Pagamento aprovado e pedido ${order.id} atualizado.`);
+        console.log("PAGAMENTO APROVADO:", order.id);
       }
     } else {
       await connection.execute(
@@ -302,9 +312,9 @@ router.post("/webhook", async (req, res) => {
         `,
         [
           order.id,
-          order.customer_name,
+          customerName,
           "payment_update",
-          `Atualização de pagamento. Itens: ${itemsDescription}`,
+          `Status: ${paymentStatus} | ${itemsDescription}`,
           transactionAmount,
           String(paymentId),
           paymentStatus,
@@ -315,16 +325,12 @@ router.post("/webhook", async (req, res) => {
     await connection.commit();
     return res.sendStatus(200);
   } catch (error) {
-    if (connection) {
-      await connection.rollback();
-    }
+    if (connection) await connection.rollback();
 
-    console.error("Erro no webhook do Mercado Pago:", error);
+    console.error("Erro webhook:", error);
     return res.sendStatus(500);
   } finally {
-    if (connection) {
-      connection.release();
-    }
+    if (connection) connection.release();
   }
 });
 

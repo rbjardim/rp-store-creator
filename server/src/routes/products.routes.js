@@ -13,6 +13,15 @@ const upload = multer({
   },
 });
 
+function parseActive(value) {
+  return value === true ||
+    value === "true" ||
+    value === 1 ||
+    value === "1"
+    ? 1
+    : 0;
+}
+
 router.get("/", async (req, res) => {
   try {
     const [rows] = await pool.execute(`
@@ -26,6 +35,7 @@ router.get("/", async (req, res) => {
         p.category_id,
         p.active,
         p.sort_order,
+        p.description,
         c.name AS category_name,
         CASE
           WHEN p.image_data IS NOT NULL THEN CONCAT('/api/products/', p.id, '/image')
@@ -60,7 +70,10 @@ router.get("/:id/image", async (req, res) => {
       return res.status(404).send("Imagem não encontrada.");
     }
 
-    res.setHeader("Content-Type", rows[0].image_mime_type || "application/octet-stream");
+    res.setHeader(
+      "Content-Type",
+      rows[0].image_mime_type || "application/octet-stream"
+    );
     res.setHeader("Cache-Control", "public, max-age=86400");
     return res.send(rows[0].image_data);
   } catch (error) {
@@ -91,6 +104,7 @@ router.post("/", authRequired, adminOnly, upload.single("image"), async (req, re
 
     const imageData = req.file ? req.file.buffer : null;
     const imageMimeType = req.file ? req.file.mimetype : null;
+    const activeValue = parseActive(active);
 
     await pool.execute(
       `
@@ -123,7 +137,7 @@ router.post("/", authRequired, adminOnly, upload.single("image"), async (req, re
         null,
         imageData,
         imageMimeType,
-        active === "true" ? 1 : 0,
+        activeValue,
         sort_order ? Number(sort_order) : 0,
         description || null,
       ]
@@ -161,6 +175,11 @@ router.put("/:id", authRequired, adminOnly, upload.single("image"), async (req, 
       return res.status(400).json({ message: "Nome e preço são obrigatórios." });
     }
 
+    const activeValue = parseActive(active);
+
+    console.log("ACTIVE RECEBIDO:", active, typeof active);
+    console.log("ACTIVE CONVERTIDO:", activeValue);
+
     let imageSql = "";
     const params = [
       name,
@@ -169,8 +188,9 @@ router.put("/:id", authRequired, adminOnly, upload.single("image"), async (req, 
       discount ? Number(discount) : null,
       tag || null,
       category_id || null,
-      active === "true" ? 1 : 0,
+      activeValue,
       sort_order ? Number(sort_order) : 0,
+      description || null,
     ];
 
     if (req.file) {
@@ -191,7 +211,8 @@ router.put("/:id", authRequired, adminOnly, upload.single("image"), async (req, 
         tag = ?,
         category_id = ?,
         active = ?,
-        sort_order = ?
+        sort_order = ?,
+        description = ?
         ${imageSql}
       WHERE id = ?
       `,

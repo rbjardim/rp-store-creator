@@ -50,4 +50,82 @@ router.delete("/:id", authRequired, adminOnly, async (req, res) => {
   }
 });
 
+router.put("/me/password", authRequired, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        message: "Informe a senha atual e a nova senha.",
+      });
+    }
+
+    // 🔐 validação forte da senha
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+
+    if (!passwordRegex.test(newPassword)) {
+      return res.status(400).json({
+        message:
+          "A senha deve ter no mínimo 8 caracteres, incluindo letra maiúscula, minúscula, número e caractere especial.",
+      });
+    }
+
+    // busca senha atual
+    const [rows] = await pool.execute(
+      "SELECT password_hash FROM users WHERE id = ?",
+      [userId]
+    );
+
+    const user = rows[0];
+
+    if (!user) {
+      return res.status(404).json({ message: "Usuário não encontrado." });
+    }
+
+    // verifica senha atual
+    const isMatch = await bcrypt.compare(
+      currentPassword,
+      user.password_hash
+    );
+
+    if (!isMatch) {
+      return res.status(401).json({
+        message: "Senha atual incorreta.",
+      });
+    }
+
+    // evita repetir senha
+    const samePassword = await bcrypt.compare(
+      newPassword,
+      user.password_hash
+    );
+
+    if (samePassword) {
+      return res.status(400).json({
+        message: "A nova senha deve ser diferente da atual.",
+      });
+    }
+
+    // criptografa nova senha
+    const newHash = await bcrypt.hash(newPassword, 10);
+
+    // atualiza
+    await pool.execute(
+      "UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?",
+      [newHash, userId]
+    );
+
+    return res.json({
+      message: "Senha alterada com sucesso.",
+    });
+  } catch (error) {
+    console.error("Erro ao alterar senha:", error);
+    return res.status(500).json({
+      message: "Erro ao alterar senha.",
+    });
+  }
+});
+
 module.exports = router;

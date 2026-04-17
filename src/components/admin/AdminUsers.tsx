@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { API_URL } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Trash2,
   UserPlus,
@@ -10,6 +11,7 @@ import {
   Lock,
   User,
   Users,
+  KeyRound,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -25,6 +27,7 @@ type AdminUser = {
 const AdminUsers = () => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const token = localStorage.getItem("token");
 
@@ -33,6 +36,12 @@ const AdminUsers = () => {
   const [password, setPassword] = useState("");
   const [loadingCreate, setLoadingCreate] = useState(false);
   const [showForm, setShowForm] = useState(false);
+
+  const [showPasswordFormFor, setShowPasswordFormFor] = useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loadingPassword, setLoadingPassword] = useState(false);
 
   const { data: admins = [], isLoading, error } = useQuery<AdminUser[]>({
     queryKey: ["admin-users"],
@@ -58,6 +67,13 @@ const AdminUsers = () => {
     setLogin("");
     setEmail("");
     setPassword("");
+  };
+
+  const resetPasswordForm = () => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowPasswordFormFor(null);
   };
 
   const createUser = useMutation({
@@ -131,6 +147,61 @@ const AdminUsers = () => {
     onError: (error: any) => {
       toast({
         title: "Erro ao excluir",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const changeOwnPassword = useMutation({
+    mutationFn: async () => {
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        throw new Error("Preencha todos os campos da senha.");
+      }
+
+      if (newPassword !== confirmPassword) {
+        throw new Error("As senhas não coincidem.");
+      }
+
+      const passwordRegex =
+        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+
+      if (!passwordRegex.test(newPassword)) {
+        throw new Error(
+          "A senha deve ter no mínimo 8 caracteres, com letra maiúscula, minúscula, número e caractere especial."
+        );
+      }
+
+      const res = await fetch(`${API_URL}/users/me/password`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.message || "Erro ao alterar senha");
+      }
+
+      return data;
+    },
+    onSuccess: () => {
+      toast({
+        title: "Sucesso",
+        description: "Sua senha foi alterada com sucesso.",
+      });
+      resetPasswordForm();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro ao alterar senha",
         description: error.message,
         variant: "destructive",
       });
@@ -263,36 +334,126 @@ const AdminUsers = () => {
         ) : (
           <div className="grid gap-3">
             {admins.map((admin) => (
-              <div
-                key={admin.id}
-                className="flex items-center justify-between rounded-lg border border-border bg-card p-4"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="rounded-full bg-primary/10 p-2">
-                    <ShieldCheck className="h-5 w-5 text-primary" />
+              <div key={admin.id} className="space-y-3">
+                <div className="flex items-center justify-between rounded-lg border border-border bg-card p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-full bg-primary/10 p-2">
+                      <ShieldCheck className="h-5 w-5 text-primary" />
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {admin.login || "Sem login"}
+                        {user?.id === admin.id && (
+                          <span className="ml-2 text-xs text-primary">(você)</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {admin.email}
+                      </p>
+                    </div>
                   </div>
 
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {admin.login || "Sem login"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {admin.email}
-                    </p>
+                  <div className="flex items-center gap-2">
+                    {user?.id === admin.id && (
+                      <button
+                        onClick={() => {
+                          if (showPasswordFormFor === admin.id) {
+                            resetPasswordForm();
+                          } else {
+                            setShowPasswordFormFor(admin.id);
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 rounded-md border border-primary/30 px-3 py-2 text-sm text-primary hover:bg-primary/10 transition"
+                      >
+                        <KeyRound className="h-4 w-4" />
+                        Alterar senha
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        if (confirm(`Remover acesso de ${admin.login}?`)) {
+                          deleteUser.mutate(admin.id);
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 rounded-md border border-destructive/30 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remover
+                    </button>
                   </div>
                 </div>
 
-                <button
-                  onClick={() => {
-                    if (confirm(`Remover acesso de ${admin.login}?`)) {
-                      deleteUser.mutate(admin.id);
-                    }
-                  }}
-                  className="inline-flex items-center gap-2 rounded-md border border-destructive/30 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Remover
-                </button>
+                {user?.id === admin.id && showPasswordFormFor === admin.id && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      setLoadingPassword(true);
+                      changeOwnPassword.mutate(undefined, {
+                        onSettled: () => setLoadingPassword(false),
+                      });
+                    }}
+                    className="card-gradient rounded-lg border border-border p-6 space-y-4"
+                  >
+                    <h3 className="text-sm font-bold flex items-center gap-2 text-foreground">
+                      <Lock className="h-4 w-4 text-primary" />
+                      Alterar minha senha
+                    </h3>
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <input
+                        type="password"
+                        placeholder="Senha atual"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        className="w-full rounded-md border border-border bg-secondary px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        required
+                      />
+
+                      <input
+                        type="password"
+                        placeholder="Nova senha"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full rounded-md border border-border bg-secondary px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        required
+                      />
+
+                      <input
+                        type="password"
+                        placeholder="Confirmar nova senha"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full rounded-md border border-border bg-secondary px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        required
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="submit"
+                        disabled={loadingPassword}
+                        className="inline-flex items-center gap-2 rounded-md px-4 py-2 border border-border bg-primary text-primary-foreground hover:opacity-90 transition disabled:opacity-50"
+                      >
+                        {loadingPassword ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Lock className="h-4 w-4" />
+                        )}
+                        Salvar nova senha
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={resetPasswordForm}
+                        className="inline-flex items-center gap-2 rounded-md px-4 py-2 border border-border text-foreground hover:bg-accent transition"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             ))}
 

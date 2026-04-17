@@ -13,7 +13,7 @@ const couponsRoutes = require("./routes/coupons.routes");
 const checkoutRoutes = require("./routes/checkout.routes");
 
 console.log("Iniciando app.js...");
-console.log("JWT_SECRET:", process.env.JWT_SECRET);
+console.log("JWT_SECRET configurado:", !!process.env.JWT_SECRET);
 
 const app = express();
 
@@ -52,7 +52,7 @@ app.use((req, res, next) => {
 });
 
 app.get("/", (req, res) => {
-  res.send("API da loja online está rodando.");
+  res.status(200).send("API da loja online está rodando.");
 });
 
 app.post("/api/test-body", (req, res) => {
@@ -60,12 +60,23 @@ app.post("/api/test-body", (req, res) => {
   res.json({ body: req.body });
 });
 
-app.get("/api/health", async (req, res) => {
+// Health check simples para o Render
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    ok: true,
+    message: "API online",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Health check separado para testar o banco manualmente
+app.get("/api/health/db", async (req, res) => {
   try {
     const [rows] = await pool.execute("SELECT 1 AS ok");
-    res.json({
+    res.status(200).json({
       ok: true,
-      message: "API online e banco conectado",
+      message: "Banco conectado",
       database: rows[0],
     });
   } catch (error) {
@@ -88,6 +99,6 @@ app.use("/api/checkout", checkoutRoutes);
 
 const PORT = process.env.PORT || 3001;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`API rodando na porta ${PORT}`);
 });

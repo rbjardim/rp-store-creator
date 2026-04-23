@@ -2,6 +2,7 @@ import { ShoppingCart } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
+import { Link } from "react-router-dom";
 
 type StoreSettings = {
   store_name?: string;
@@ -25,46 +26,65 @@ const StoreNavbar = () => {
 
   return (
     <nav className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur-md">
+      
       {bannerText && (
         <div className="bg-accent py-2 text-center">
-          <p className="text-sm font-semibold text-accent-foreground">{bannerText}</p>
+          <p className="text-sm font-semibold text-accent-foreground">
+            {bannerText}
+          </p>
         </div>
       )}
 
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-3">
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt={storeName}
-              className="h-16 object-contain"
-            />
-          ) : (
-            <>
+        
+        {/* ESQUERDA (LOGO + TERMOS) */}
+        <div className="flex items-center gap-6">
+          
+          <Link to="/" className="flex items-center gap-3">
+            {logoUrl ? (
               <img
-                src="/logocl2.png"
+                src={logoUrl}
                 alt={storeName}
                 className="h-16 object-contain"
               />
-              <span className="font-display text-2xl tracking-wide text-foreground">
-                {storeName}
-              </span>
-            </>
-          )}
+            ) : (
+              <>
+                <img
+                  src="/logocl2.png"
+                  alt={storeName}
+                  className="h-16 object-contain"
+                />
+                <span className="font-display text-2xl tracking-wide text-foreground">
+                  {storeName}
+                </span>
+              </>
+            )}
+          </Link>
+
+          <Link
+            to="/termos"
+            className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-all hover:bg-accent hover:text-accent-foreground active:scale-95"
+          >
+            Termos
+          </Link>
+
         </div>
 
+        {/* DIREITA (CARRINHO) */}
         <button
           onClick={() => setIsOpen(true)}
           className="relative flex items-center gap-2 rounded-lg bg-accent px-4 py-2 font-semibold text-accent-foreground transition-all hover:opacity-90 active:scale-95"
         >
           <ShoppingCart className="h-4 w-4" />
           <span>Carrinho</span>
+
           {itemCount > 0 && (
             <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-highlight text-xs font-bold text-accent-foreground">
               {itemCount}
             </span>
           )}
         </button>
+
       </div>
     </nav>
   );

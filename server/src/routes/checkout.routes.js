@@ -24,7 +24,29 @@ router.post("/create-preference", async (req, res) => {
     console.log("CHECKOUT NOVO EXECUTADO");
     console.log("BODY:", req.body);
 
-    const { items, couponCode } = req.body;
+    const { items, couponCode, customer } = req.body;
+
+    const customerName = String(customer?.name || "").trim();
+    const customerEmail = String(customer?.email || "").trim();
+    const characterId = String(customer?.characterId || "").trim();
+    const discordId = String(customer?.discordId || "").trim();
+    const discordUsername = String(customer?.discordUsername || "").trim();
+
+    if (!customerName) {
+      return res.status(400).json({ message: "Informe seu nome completo." });
+    }
+
+    if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+      return res.status(400).json({ message: "Informe um e-mail válido." });
+    }
+
+    if (!characterId) {
+      return res.status(400).json({ message: "Informe o ID do personagem." });
+    }
+
+    if (!discordId || !discordUsername) {
+      return res.status(400).json({ message: "Conecte sua conta do Discord antes de finalizar a compra." });
+    }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Carrinho vazio" });
@@ -131,17 +153,23 @@ router.post("/create-preference", async (req, res) => {
       INSERT INTO orders (
         customer_name,
         customer_email,
+        character_id,
+        discord_id,
+        discord_username,
         total_amount,
         status,
         coupon_code,
         discount_percent,
         discount_amount,
         subtotal_amount
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
-        "Cliente",
-        null,
+        customerName,
+        customerEmail,
+        characterId,
+        discordId,
+        discordUsername,
         totalAmount,
         "pending",
         coupon ? coupon.code : null,
@@ -226,11 +254,11 @@ router.post("/create-preference", async (req, res) => {
       `,
       [
         orderId,
-        "Cliente",
+        customerName,
         "order_created",
         coupon
-          ? `Pedido criado com ${formattedItems.length} item(ns) | Cupom ${coupon.code} aplicado`
-          : `Pedido criado com ${formattedItems.length} item(ns)`,
+          ? `Pedido criado com ${formattedItems.length} item(ns) | Cupom ${coupon.code} aplicado | Personagem ID ${characterId} | Discord ${discordUsername} (${discordId})`
+          : `Pedido criado com ${formattedItems.length} item(ns) | Personagem ID ${characterId} | Discord ${discordUsername} (${discordId})`,
         totalAmount,
         "pending",
       ]

@@ -67,6 +67,10 @@ const ProductCard = ({ product }: Props) => {
           {product.description || "Sem descrição"}
         </p>
 
+        <pre className="text-[10px] text-red-500">
+          {JSON.stringify(product, null, 2)}
+        </pre>
+
         <div className="mt-3 flex items-baseline gap-2">
           {product.old_price && (
             <span className="text-xs line-through text-old-price">

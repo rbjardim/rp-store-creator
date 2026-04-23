@@ -1,6 +1,6 @@
 import { X, Minus, Plus, ShoppingCart } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { API_URL } from "@/lib/api";
 
 const getImageUrl = (imageUrl?: string | null) => {
@@ -10,8 +10,7 @@ const getImageUrl = (imageUrl?: string | null) => {
     return imageUrl;
   }
 
-  const base = API_URL.replace(/\/api$/, ""); // remove o /api do final
-
+  const base = API_URL.replace(/\/api$/, "");
   return `${base}${imageUrl}`;
 };
 
@@ -32,8 +31,62 @@ const CartSidebar = () => {
   const [loadingCoupon, setLoadingCoupon] = useState(false);
   const [loadingCheckout, setLoadingCheckout] = useState(false);
 
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [characterId, setCharacterId] = useState("");
+  const [discordUser, setDiscordUser] = useState<any>(null);
+
+  useEffect(() => {
+    const savedDiscord = localStorage.getItem("checkout_discord_user");
+
+    if (savedDiscord) {
+      try {
+        setDiscordUser(JSON.parse(savedDiscord));
+      } catch {
+        localStorage.removeItem("checkout_discord_user");
+      }
+    }
+
+    const params = new URLSearchParams(window.location.search);
+
+    const discordId = params.get("discord_id");
+    const discordUsername = params.get("discord_username");
+    const discordAvatar = params.get("discord_avatar");
+
+    if (discordId && discordUsername) {
+      const user = {
+        id: discordId,
+        username: discordUsername,
+        avatar: discordAvatar,
+      };
+
+      localStorage.setItem("checkout_discord_user", JSON.stringify(user));
+      setDiscordUser(user);
+
+      params.delete("discord_id");
+      params.delete("discord_username");
+      params.delete("discord_avatar");
+
+      const cleanUrl =
+        window.location.pathname +
+        (params.toString() ? `?${params.toString()}` : "");
+
+      window.history.replaceState({}, "", cleanUrl);
+    }
+  }, []);
+
   const formatPrice = (v: number) =>
     v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  const connectDiscord = () => {
+    const returnUrl = encodeURIComponent(window.location.href);
+    window.location.href = `${API_URL}/discord/login?returnUrl=${returnUrl}`;
+  };
+
+  const disconnectDiscord = () => {
+    localStorage.removeItem("checkout_discord_user");
+    setDiscordUser(null);
+  };
 
   const applyCoupon = async () => {
     try {
@@ -49,7 +102,7 @@ const CartSidebar = () => {
 
       const data = await res.json();
 
-      if (!res.ok) throw new Error(data?.message);
+      if (!res.ok) throw new Error(data?.message || "Cupom inválido");
 
       setAppliedCoupon(data);
     } catch (err: any) {
@@ -61,47 +114,72 @@ const CartSidebar = () => {
   };
 
   const handleCheckout = async () => {
-  try {
-    if (items.length === 0) {
-      alert("Seu carrinho está vazio.");
-      return;
+    try {
+      if (items.length === 0) {
+        alert("Seu carrinho está vazio.");
+        return;
+      }
+
+      if (!customerName.trim()) {
+        alert("Informe seu nome completo.");
+        return;
+      }
+
+      if (!customerEmail.trim()) {
+        alert("Informe seu email.");
+        return;
+      }
+
+      if (!characterId.trim()) {
+        alert("Informe o ID do personagem.");
+        return;
+      }
+
+      if (!discordUser?.id) {
+        alert("Conecte seu Discord antes de finalizar.");
+        return;
+      }
+
+      setLoadingCheckout(true);
+
+      const res = await fetch(`${API_URL}/checkout/create-preference`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          items: items.map((item) => ({
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+          })),
+          couponCode: appliedCoupon?.code || null,
+          customerName: customerName.trim(),
+          customerEmail: customerEmail.trim(),
+          characterId: characterId.trim(),
+          discordId: discordUser.id,
+          discordUsername: discordUser.username,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.message || "Erro ao iniciar pagamento");
+      }
+
+      if (!data?.init_point) {
+        throw new Error("Mercado Pago não retornou a URL de pagamento.");
+      }
+
+      window.location.href = data.init_point;
+    } catch (err: any) {
+      console.error("Erro checkout:", err);
+      alert(err.message || "Erro ao finalizar compra");
+    } finally {
+      setLoadingCheckout(false);
     }
-
-    setLoadingCheckout(true);
-
-    const res = await fetch(`${API_URL}/checkout/create-preference`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        items: items.map((item) => ({
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-        })),
-        couponCode: appliedCoupon?.code || null,
-      }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data?.message || "Erro ao iniciar pagamento");
-    }
-
-    if (!data?.init_point) {
-      throw new Error("Mercado Pago não retornou a URL de pagamento.");
-    }
-
-    window.location.href = data.init_point;
-  } catch (err: any) {
-    console.error("Erro checkout:", err);
-    alert(err.message || "Erro ao finalizar compra");
-  } finally {
-    setLoadingCheckout(false);
-  }
-};
+  };
 
   const discount = appliedCoupon
     ? total * (appliedCoupon.discount_percent / 100)
@@ -123,6 +201,7 @@ const CartSidebar = () => {
           <h2 className="font-display text-xl text-foreground">
             Carrinho ({itemCount})
           </h2>
+
           <button
             onClick={() => setIsOpen(false)}
             className="rounded p-1 text-muted-foreground hover:text-foreground"
@@ -194,6 +273,61 @@ const CartSidebar = () => {
                   </button>
                 </div>
               ))}
+            </div>
+
+            <div className="border-t border-border px-4 py-3">
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-foreground">
+                Dados para finalizar
+              </h3>
+
+              <div className="space-y-2">
+                <input
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Nome completo"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                />
+
+                <input
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                  placeholder="Email"
+                  type="email"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                />
+
+                <input
+                  value={characterId}
+                  onChange={(e) => setCharacterId(e.target.value)}
+                  placeholder="ID do personagem"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                />
+
+                {!discordUser ? (
+                  <button
+                    onClick={connectDiscord}
+                    className="w-full rounded-md bg-[#5865F2] py-2 text-sm font-semibold text-white hover:opacity-90"
+                  >
+                    Conectar Discord
+                  </button>
+                ) : (
+                  <div className="rounded-md border border-green-500/40 bg-green-500/10 p-3 text-sm text-green-400">
+                    <div className="flex items-center justify-between gap-2">
+                      <span>
+                        Discord conectado:{" "}
+                        <strong>{discordUser.username}</strong>
+                      </span>
+
+                      <button
+                        onClick={disconnectDiscord}
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        Trocar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="px-4 pb-3">

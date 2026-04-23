@@ -31,6 +31,9 @@ type Category = {
 
 const Index = () => {
   const [activeCategory, setActiveCategory] = useState("all");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [sortBy, setSortBy] = useState("default");
 
   const { data: products = [] } = useQuery<Product[]>({
     queryKey: ["products"],
@@ -43,22 +46,18 @@ const Index = () => {
           name: item.name,
           description: item.description ?? null,
           price: Number(item.price ?? 0),
-
-          // 👇 CORREÇÃO AQUI
           old_price:
             item.old_price !== null &&
             item.old_price !== undefined &&
             item.old_price !== ""
               ? Number(item.old_price)
               : null,
-
           discount:
             item.discount !== null &&
             item.discount !== undefined &&
             item.discount !== ""
               ? Number(item.discount)
               : null,
-
           image_url: item.image_url ?? "",
           category_id: item.category_id ?? null,
           tag: item.tag ?? "",
@@ -76,14 +75,43 @@ const Index = () => {
   });
 
   const filteredProducts = useMemo(() => {
-    if (activeCategory === "all") return products;
-    return products.filter((p) => p.category_id === activeCategory);
-  }, [products, activeCategory]);
+    let result = [...products];
+
+    if (activeCategory !== "all") {
+      result = result.filter((p) => p.category_id === activeCategory);
+    }
+
+    if (minPrice !== "") {
+      result = result.filter((p) => p.price >= Number(minPrice));
+    }
+
+    if (maxPrice !== "") {
+      result = result.filter((p) => p.price <= Number(maxPrice));
+    }
+
+    if (sortBy === "price-asc") {
+      result.sort((a, b) => a.price - b.price);
+    } else if (sortBy === "price-desc") {
+      result.sort((a, b) => b.price - a.price);
+    } else if (sortBy === "discount") {
+      result.sort((a, b) => (b.discount ?? 0) - (a.discount ?? 0));
+    } else if (sortBy === "name") {
+      result.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    }
+
+    return result;
+  }, [products, activeCategory, minPrice, maxPrice, sortBy]);
 
   const activeCategoryName =
     activeCategory === "all"
       ? "Todos os Produtos"
       : categories.find((c) => c.id === activeCategory)?.name ?? "Produtos";
+
+  const clearFilters = () => {
+    setMinPrice("");
+    setMaxPrice("");
+    setSortBy("default");
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -104,13 +132,74 @@ const Index = () => {
           />
 
           <div className="flex-1">
-            <h2 className="mb-4 font-display text-2xl tracking-wide text-foreground">
-              {activeCategoryName}
-            </h2>
+            <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+              <h2 className="font-display text-2xl tracking-wide text-foreground">
+                {activeCategoryName}
+              </h2>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Preço mínimo
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={minPrice}
+                    onChange={(e) => setMinPrice(e.target.value)}
+                    placeholder="Ex: 50"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-accent"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Preço máximo
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={maxPrice}
+                    onChange={(e) => setMaxPrice(e.target.value)}
+                    placeholder="Ex: 500"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-accent"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Ordenar por
+                  </label>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-accent"
+                  >
+                    <option value="default">Padrão</option>
+                    <option value="price-asc">Menor preço</option>
+                    <option value="price-desc">Maior preço</option>
+                    <option value="discount">Maior desconto</option>
+                    <option value="name">Nome A-Z</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-transparent">
+                    Limpar
+                  </label>
+                  <button
+                    onClick={clearFilters}
+                    className="w-full rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
+                  >
+                    Limpar filtros
+                  </button>
+                </div>
+              </div>
+            </div>
 
             {filteredProducts.length === 0 ? (
               <p className="text-muted-foreground">
-                Nenhum produto encontrado nesta categoria.
+                Nenhum produto encontrado com os filtros selecionados.
               </p>
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">

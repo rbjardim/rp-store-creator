@@ -6,6 +6,7 @@ type Props = {
   product: {
     id: string;
     name: string;
+    description?: string | null;
     price: number;
     old_price: number | null;
     discount: number | null;
@@ -21,7 +22,7 @@ const getImageUrl = (imageUrl?: string | null) => {
     return imageUrl;
   }
 
-  const base = API_URL.replace(/\/api$/, ""); // remove o /api do final
+  const base = API_URL.replace(/\/api$/, "");
 
   return `${base}${imageUrl}`;
 };
@@ -59,6 +60,12 @@ const ProductCard = ({ product }: Props) => {
         <h3 className="line-clamp-2 text-sm font-bold leading-tight text-foreground">
           {product.name}
         </h3>
+
+        {product.description && (
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground whitespace-pre-line">
+            {product.description}
+          </p>
+        )}
 
         <div className="mt-3 flex items-baseline gap-2">
           {product.old_price && (

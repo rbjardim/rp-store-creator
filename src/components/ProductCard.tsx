@@ -23,7 +23,6 @@ const getImageUrl = (imageUrl?: string | null) => {
   }
 
   const base = API_URL.replace(/\/api$/, "");
-
   return `${base}${imageUrl}`;
 };
 
@@ -37,6 +36,7 @@ const ProductCard = ({ product }: Props) => {
 
   return (
     <div className="group card-gradient overflow-hidden rounded-lg border border-border transition-all hover:border-accent/40 hover:shadow-lg">
+      
       <div className="relative aspect-square overflow-hidden bg-secondary">
         {imageSrc ? (
           <img
@@ -49,6 +49,7 @@ const ProductCard = ({ product }: Props) => {
             <ShoppingCart className="h-12 w-12 opacity-20" />
           </div>
         )}
+
         {product.tag && (
           <span className="absolute left-2 top-2 rounded bg-accent px-2 py-0.5 text-xs font-bold text-accent-foreground">
             {product.tag}
@@ -57,15 +58,14 @@ const ProductCard = ({ product }: Props) => {
       </div>
 
       <div className="p-4">
-        <h3 className="line-clamp-2 text-sm font-bold leading-tight text-foreground">
+        <h3 className="text-sm font-bold leading-tight text-foreground">
           {product.name}
         </h3>
 
-        {product.description && (
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground whitespace-pre-line">
-            {product.description}
-          </p>
-        )}
+        {/* 🔥 DESCRIÇÃO */}
+        <p className="mt-2 text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+          {product.description || "Sem descrição"}
+        </p>
 
         <div className="mt-3 flex items-baseline gap-2">
           {product.old_price && (
@@ -73,6 +73,7 @@ const ProductCard = ({ product }: Props) => {
               {formatPrice(product.old_price)}
             </span>
           )}
+
           {product.discount && (
             <span className="text-xs font-bold text-discount">
               ↘ {product.discount}% OFF
@@ -84,7 +85,9 @@ const ProductCard = ({ product }: Props) => {
           {formatPrice(product.price)}
         </p>
 
-        <p className="text-xs text-muted-foreground">À vista no Pix</p>
+        <p className="text-xs text-muted-foreground">
+          À vista no Pix
+        </p>
 
         <button
           onClick={() =>

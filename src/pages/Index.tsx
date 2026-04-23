@@ -12,6 +12,7 @@ import CartSidebar from "@/components/CartSidebar";
 type Product = {
   id: string;
   name: string;
+  description?: string | null;
   price: number;
   old_price: number;
   discount: number;
@@ -40,6 +41,7 @@ const Index = () => {
         .map((item) => ({
           id: item.id,
           name: item.name,
+          description: item.description ?? null,
           price: Number(item.price ?? 0),
           old_price: Number(item.old_price ?? 0),
           discount: Number(item.discount ?? 0),

@@ -62,14 +62,9 @@ const ProductCard = ({ product }: Props) => {
           {product.name}
         </h3>
 
-        {/* 🔥 DESCRIÇÃO */}
         <p className="mt-2 text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
           {product.description || "Sem descrição"}
         </p>
-
-        <pre className="text-[10px] text-red-500">
-          {JSON.stringify(product, null, 2)}
-        </pre>
 
         <div className="mt-3 flex items-baseline gap-2">
           {product.old_price && (

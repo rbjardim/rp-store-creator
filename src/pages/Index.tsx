@@ -14,8 +14,8 @@ type Product = {
   name: string;
   description?: string | null;
   price: number;
-  old_price: number;
-  discount: number;
+  old_price: number | null;
+  discount: number | null;
   image_url: string;
   category_id?: string | null;
   tag: string;
@@ -43,8 +43,22 @@ const Index = () => {
           name: item.name,
           description: item.description ?? null,
           price: Number(item.price ?? 0),
-          old_price: Number(item.old_price ?? 0),
-          discount: Number(item.discount ?? 0),
+
+          // 👇 CORREÇÃO AQUI
+          old_price:
+            item.old_price !== null &&
+            item.old_price !== undefined &&
+            item.old_price !== ""
+              ? Number(item.old_price)
+              : null,
+
+          discount:
+            item.discount !== null &&
+            item.discount !== undefined &&
+            item.discount !== ""
+              ? Number(item.discount)
+              : null,
+
           image_url: item.image_url ?? "",
           category_id: item.category_id ?? null,
           tag: item.tag ?? "",
@@ -78,10 +92,16 @@ const Index = () => {
       <CartSidebar />
 
       <div id="store" className="mx-auto max-w-7xl px-4 py-8">
-        <CategoryTabs activeCategory={activeCategory} onSelectCategory={setActiveCategory} />
+        <CategoryTabs
+          activeCategory={activeCategory}
+          onSelectCategory={setActiveCategory}
+        />
 
         <div className="mt-4 flex gap-8">
-          <CategorySidebar activeCategory={activeCategory} onSelectCategory={setActiveCategory} />
+          <CategorySidebar
+            activeCategory={activeCategory}
+            onSelectCategory={setActiveCategory}
+          />
 
           <div className="flex-1">
             <h2 className="mb-4 font-display text-2xl tracking-wide text-foreground">

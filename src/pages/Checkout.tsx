@@ -136,13 +136,16 @@ const Checkout = () => {
             name: i.name,
             price: i.price,
             quantity: i.quantity,
+            image_url: i.image_url,
           })),
-          couponCode: appliedCoupon?.code || null,
-          customerName,
-          customerEmail,
-          characterId,
-          discordId: discordUser.id,
-          discordUsername: discordUser.username,
+          couponCode: coupon || null,
+          customer: {
+            name: customerName,
+            email: customerEmail,
+            characterId: characterId,
+            discordId: discordUser.id,
+            discordUsername: discordUser.username,
+          },
         }),
       });
 
@@ -167,86 +170,180 @@ const Checkout = () => {
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-6 text-white">
-      <h1 className="mb-6 text-2xl font-bold">Finalizar compra</h1>
+    <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
+      <div className="absolute inset-0 bg-background opacity-95" />
+      <div className="absolute inset-0 backdrop-blur-md" />
 
-      {/* 🛒 Produtos */}
-      <div className="mb-6 space-y-2">
-        {items.map((item) => (
-          <div key={item.id} className="flex justify-between border p-3 rounded">
-            <span>{item.name} x{item.quantity}</span>
-            <span>{formatPrice(item.price * item.quantity)}</span>
+      <div className="relative z-10 flex min-h-screen items-center justify-center p-4">
+        <div className="w-full max-w-5xl rounded-2xl border border-border bg-card/95 p-6 shadow-2xl">
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <div>
+              <h1 className="font-display text-3xl text-foreground">
+                Finalizar Doação
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Confira seus produtos e preencha os dados para continuar.
+              </p>
+            </div>
+
+            <button
+              onClick={() => (window.location.href = "/")}
+              className="rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+            >
+              Voltar para loja
+            </button>
           </div>
-        ))}
-      </div>
 
-      {/* 📋 Formulário */}
-      <div className="space-y-3 mb-6">
-        <input
-          value={customerName}
-          onChange={(e) => setCustomerName(e.target.value)}
-          placeholder="Nome completo"
-          className="w-full p-2 rounded bg-black text-white border"
-        />
+          <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+            <div className="space-y-4">
+              <div className="rounded-xl border border-border bg-background p-4">
+                <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  Produto(s)
+                </h2>
 
-        <input
-          value={customerEmail}
-          onChange={(e) => setCustomerEmail(e.target.value)}
-          placeholder="Email"
-          className="w-full p-2 rounded bg-black text-white border"
-        />
+                <div className="space-y-3">
+                  {items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-3"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        {item.image_url && (
+                          <img
+                            src={
+                              item.image_url.startsWith("http")
+                                ? item.image_url
+                                : `${API_URL.replace(/\/api$/, "")}${item.image_url}`
+                            }
+                            alt={item.name}
+                            className="h-14 w-14 rounded-md object-cover"
+                          />
+                        )}
 
-        <input
-          value={characterId}
-          onChange={(e) => setCharacterId(e.target.value)}
-          placeholder="ID do personagem"
-          className="w-full p-2 rounded bg-black text-white border"
-        />
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-foreground">
+                            {item.name}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            Quantidade: {item.quantity}
+                          </p>
+                        </div>
+                      </div>
 
-        {!discordUser ? (
-          <button
-            onClick={connectDiscord}
-            className="w-full bg-indigo-600 p-2 rounded"
-          >
-            Conectar Discord
-          </button>
-        ) : (
-          <div className="bg-green-700 p-2 rounded">
-            Discord conectado: {discordUser.username}
+                      <div className="text-right">
+                        <p className="font-semibold text-foreground">
+                          {formatPrice(item.price * item.quantity)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatPrice(item.price)} cada
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-background p-4">
+                <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  Cupom de desconto
+                </h2>
+
+                <input
+                  value={coupon}
+                  onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+                  placeholder="Digite seu cupom"
+                  className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                />
+
+                <button
+                  onClick={applyCoupon}
+                  className="mt-2 w-full rounded-md bg-secondary py-2 text-sm font-semibold text-secondary-foreground hover:opacity-90"
+                >
+                  Aplicar cupom
+                </button>
+
+                {appliedCoupon && (
+                  <p className="mt-2 text-xs text-green-400">
+                    Cupom aplicado: {appliedCoupon.discount_percent}% OFF
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-background p-4">
+              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Seus dados
+              </h2>
+
+              <div className="space-y-3">
+                <input
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Nome completo"
+                  className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                />
+
+                <input
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                  placeholder="Email"
+                  type="email"
+                  className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                />
+
+                <input
+                  value={characterId}
+                  onChange={(e) => setCharacterId(e.target.value)}
+                  placeholder="ID do personagem"
+                  className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                />
+
+                {!discordUser ? (
+                  <button
+                    onClick={connectDiscord}
+                    className="w-full rounded-md bg-[#5865F2] py-2 text-sm font-semibold text-white hover:opacity-90"
+                  >
+                    Conectar Discord
+                  </button>
+                ) : (
+                  <div className="rounded-md border border-green-500/40 bg-green-500/10 p-3 text-sm text-green-400">
+                    Discord conectado: <strong>{discordUser.username}</strong>
+                  </div>
+                )}
+              </div>
+
+              <div className="my-5 border-t border-border" />
+
+              <div className="space-y-2 text-sm text-foreground">
+                <div className="flex justify-between">
+                  <span>Subtotal</span>
+                  <span>{formatPrice(total)}</span>
+                </div>
+
+                {appliedCoupon && (
+                  <div className="flex justify-between text-green-400">
+                    <span>Desconto</span>
+                    <span>-{formatPrice(discount)}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between text-lg font-bold">
+                  <span>Total</span>
+                  <span>{formatPrice(finalTotal)}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleCheckout}
+                disabled={loading}
+                className="mt-5 w-full rounded-md bg-primary py-3 font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+              >
+                {loading ? "Processando..." : "Pagar agora"}
+              </button>
+            </div>
           </div>
-        )}
+        </div>
       </div>
-
-      {/* 🎟 Cupom */}
-      <div className="mb-6">
-        <input
-          value={coupon}
-          onChange={(e) => setCoupon(e.target.value)}
-          placeholder="Cupom"
-          className="w-full p-2 rounded bg-black text-white border"
-        />
-        <button
-          onClick={applyCoupon}
-          className="mt-2 w-full bg-gray-700 p-2 rounded"
-        >
-          Aplicar cupom
-        </button>
-      </div>
-
-      {/* 💰 Total */}
-      <div className="mb-4 flex justify-between">
-        <span>Total:</span>
-        <span>{formatPrice(finalTotal)}</span>
-      </div>
-
-      {/* 💳 Botão */}
-      <button
-        onClick={handleCheckout}
-        disabled={loading}
-        className="w-full bg-green-600 p-3 rounded font-bold"
-      >
-        {loading ? "Processando..." : "Pagar"}
-      </button>
     </div>
   );
 };

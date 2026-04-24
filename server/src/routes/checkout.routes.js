@@ -1,5 +1,6 @@
 const express = require("express");
 const mercadopago = require("mercadopago");
+const axios = require("axios");
 const pool = require("../db");
 
 const router = express.Router();
@@ -17,39 +18,191 @@ function round2(value) {
   return Number(Number(value).toFixed(2));
 }
 
+function formatBRL(value) {
+  return Number(value || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+function cleanChannelName(name) {
+  return String(name || "usuario")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9-_]/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 80);
+}
+
+function getFullImageUrl(imageUrl) {
+  if (!imageUrl) return null;
+  if (String(imageUrl).startsWith("http")) return imageUrl;
+
+  const apiBase = process.env.API_PUBLIC_URL || "https://api.campolimporp.com.br";
+  return `${apiBase.replace(/\/$/, "")}${imageUrl}`;
+}
+
+async function createDiscordChannelAndNotify(order, items, payment) {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  const guildId = process.env.DISCORD_GUILD_ID;
+  const categoryId = process.env.DISCORD_CATEGORY_ID;
+
+  if (!botToken || !guildId || !categoryId) {
+    console.log("Discord bot/env não configurado.");
+    return null;
+  }
+
+  const paymentMethod =
+    payment.payment_method_id || payment.payment_type_id || "Não informado";
+
+  const channelName = `doacao-${cleanChannelName(order.discord_username)}`;
+
+  const channelRes = await axios.post(
+    `https://discord.com/api/v10/guilds/${guildId}/channels`,
+    {
+      name: channelName,
+      type: 0,
+      parent_id: categoryId,
+    },
+    {
+      headers: {
+        Authorization: `Bot ${botToken}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  const channelId = channelRes.data.id;
+
+  const itemsText = items
+    .map(
+      (i) =>
+        `• **${i.product_name}** x${i.quantity} — ${formatBRL(i.line_total)}`
+    )
+    .join("\n");
+
+  await axios.post(
+    `https://discord.com/api/v10/channels/${channelId}/messages`,
+    {
+      content: `
+🎉 **Nova doação aprovada!**
+
+👤 **Nome:** ${order.customer_name}
+📧 **Email:** ${order.customer_email}
+🎮 **ID Personagem:** ${order.character_id}
+💬 **Discord:** <@${order.discord_id}>
+
+🛒 **Itens:**
+${itemsText}
+
+💰 **Total:** ${formatBRL(order.total_amount)}
+💳 **Forma de pagamento:** ${paymentMethod}
+🧾 **Pagamento ID:** ${payment.id}
+      `,
+    },
+    {
+      headers: {
+        Authorization: `Bot ${botToken}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  // DM para usuário
+  try {
+    const dmRes = await axios.post(
+      "https://discord.com/api/v10/users/@me/channels",
+      {
+        recipient_id: order.discord_id,
+      },
+      {
+        headers: {
+          Authorization: `Bot ${botToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const dmChannelId = dmRes.data.id;
+
+    for (const item of items) {
+      const imageUrl = getFullImageUrl(item.image_url);
+
+      await axios.post(
+        `https://discord.com/api/v10/channels/${dmChannelId}/messages`,
+        {
+          content: `✅ **Item adquirido com sucesso!**`,
+          embeds: [
+            {
+              title: item.product_name,
+              description: `
+🎮 **ID Personagem:** ${order.character_id}
+📧 **Email:** ${order.customer_email}
+
+📦 **Quantidade:** ${item.quantity}
+💰 **Preço:** ${formatBRL(item.line_total)}
+💳 **Forma de pagamento:** ${paymentMethod}
+
+Obrigado pela sua doação! ❤️
+              `,
+              color: 5763719,
+              image: imageUrl ? { url: imageUrl } : undefined,
+              footer: {
+                text: `Pedido #${order.id}`,
+              },
+            },
+          ],
+        },
+        {
+          headers: {
+            Authorization: `Bot ${botToken}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
+  } catch (dmError) {
+    console.log(
+      "Não foi possível enviar DM:",
+      dmError.response?.data || dmError.message
+    );
+  }
+
+  return channelId;
+}
+
 router.post("/create-preference", async (req, res) => {
   let connection;
 
   try {
-    console.log("CHECKOUT NOVO EXECUTADO");
-    console.log("BODY:", req.body);
+    const {
+      items,
+      couponCode,
+      customer,
+      customerName: rawName,
+      customerEmail: rawEmail,
+      characterId: rawCharacterId,
+      discordId: rawDiscordId,
+      discordUsername: rawDiscordUsername,
+    } = req.body;
 
-    const { items, couponCode, customer } = req.body;
+    const customerName = String(customer?.name || rawName || "").trim();
+    const customerEmail = String(customer?.email || rawEmail || "").trim();
+    const characterId = String(customer?.characterId || rawCharacterId || "").trim();
+    const discordId = String(customer?.discordId || rawDiscordId || "").trim();
+    const discordUsername = String(
+      customer?.discordUsername || rawDiscordUsername || ""
+    ).trim();
 
-    const customerName = String(customer?.name || "").trim();
-    const customerEmail = String(customer?.email || "").trim();
-    const characterId = String(customer?.characterId || "").trim();
-    const discordId = String(customer?.discordId || "").trim();
-    const discordUsername = String(customer?.discordUsername || "").trim();
-
-    if (!customerName) {
-      return res.status(400).json({ message: "Informe seu nome completo." });
-    }
-
-    if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
-      return res.status(400).json({ message: "Informe um e-mail válido." });
-    }
-
-    if (!characterId) {
-      return res.status(400).json({ message: "Informe o ID do personagem." });
-    }
-
+    if (!customerName) return res.status(400).json({ message: "Informe seu nome." });
+    if (!customerEmail) return res.status(400).json({ message: "Informe seu email." });
+    if (!characterId) return res.status(400).json({ message: "Informe o ID do personagem." });
     if (!discordId || !discordUsername) {
-      return res.status(400).json({ message: "Conecte sua conta do Discord antes de finalizar a compra." });
+      return res.status(400).json({ message: "Conecte o Discord." });
     }
-
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ message: "Carrinho vazio" });
+    if (!items || !Array.isArray(items) || !items.length) {
+      return res.status(400).json({ message: "Carrinho vazio." });
     }
 
     const normalizedItems = items.map((item) => ({
@@ -57,100 +210,37 @@ router.post("/create-preference", async (req, res) => {
       quantity: Number(item.quantity),
       currency_id: "BRL",
       unit_price: toMoney(item.price),
+      image_url: item.image_url || null,
     }));
 
-    const hasInvalidItem = normalizedItems.some(
-      (item) =>
-        !item.title ||
-        Number.isNaN(item.quantity) ||
-        Number.isNaN(item.unit_price) ||
-        item.quantity <= 0 ||
-        item.unit_price <= 0
-    );
-
-    if (hasInvalidItem) {
-      return res.status(400).json({ message: "Itens inválidos no carrinho" });
-    }
-
     const subtotal = round2(
-      normalizedItems.reduce((total, item) => {
-        return total + item.quantity * item.unit_price;
-      }, 0)
+      normalizedItems.reduce((t, i) => t + i.quantity * i.unit_price, 0)
     );
 
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    let coupon = null;
     let discountPercent = 0;
     let discountAmount = 0;
+    let coupon = null;
 
-    if (couponCode && String(couponCode).trim()) {
-      const [couponRows] = await connection.execute(
-        `
-        SELECT id, code, discount_percent, active
-        FROM coupons
-        WHERE UPPER(code) = UPPER(?)
-        LIMIT 1
-        `,
-        [String(couponCode).trim()]
+    if (couponCode) {
+      const [rows] = await connection.execute(
+        `SELECT * FROM coupons WHERE UPPER(code) = UPPER(?) LIMIT 1`,
+        [couponCode]
       );
 
-      if (!couponRows.length) {
-        await connection.rollback();
-        return res.status(400).json({ message: "Cupom não encontrado." });
+      if (rows.length && rows[0].active) {
+        coupon = rows[0];
+        discountPercent = Number(coupon.discount_percent || 0);
+        discountAmount = round2((subtotal * discountPercent) / 100);
       }
-
-      coupon = couponRows[0];
-
-      if (!coupon.active) {
-        await connection.rollback();
-        return res.status(400).json({ message: "Cupom inativo." });
-      }
-
-      discountPercent = Number(coupon.discount_percent || 0);
-      discountAmount = round2((subtotal * discountPercent) / 100);
     }
 
     const totalAmount = round2(subtotal - discountAmount);
 
-    if (totalAmount <= 0) {
-      await connection.rollback();
-      return res.status(400).json({ message: "Total inválido após aplicar o cupom." });
-    }
-
-    // distribui o desconto proporcionalmente entre os itens
-    let remainingDiscount = discountAmount;
-
-    const formattedItems = normalizedItems.map((item, index) => {
-      const itemTotal = round2(item.unit_price * item.quantity);
-
-      let itemDiscount = 0;
-      if (discountAmount > 0) {
-        if (index === normalizedItems.length - 1) {
-          itemDiscount = remainingDiscount;
-        } else {
-          itemDiscount = round2((itemTotal / subtotal) * discountAmount);
-          remainingDiscount = round2(remainingDiscount - itemDiscount);
-        }
-      }
-
-      const finalLineTotal = round2(itemTotal - itemDiscount);
-      const finalUnitPrice = round2(finalLineTotal / item.quantity);
-
-      return {
-        title: item.title,
-        quantity: item.quantity,
-        currency_id: "BRL",
-        unit_price: finalUnitPrice,
-        original_unit_price: item.unit_price,
-        line_total: finalLineTotal,
-      };
-    });
-
     const [orderResult] = await connection.execute(
-      `
-      INSERT INTO orders (
+      `INSERT INTO orders (
         customer_name,
         customer_email,
         character_id,
@@ -162,8 +252,7 @@ router.post("/create-preference", async (req, res) => {
         discount_percent,
         discount_amount,
         subtotal_amount
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         customerName,
         customerEmail,
@@ -173,32 +262,31 @@ router.post("/create-preference", async (req, res) => {
         totalAmount,
         "pending",
         coupon ? coupon.code : null,
-        discountPercent || 0,
-        discountAmount || 0,
+        discountPercent,
+        discountAmount,
         subtotal,
       ]
     );
 
     const orderId = orderResult.insertId;
-    const externalReference = String(orderId);
 
-    for (const item of formattedItems) {
+    for (const item of normalizedItems) {
       await connection.execute(
-        `
-        INSERT INTO order_items (
+        `INSERT INTO order_items (
           order_id,
           product_name,
+          image_url,
           quantity,
           unit_price,
           line_total
-        ) VALUES (?, ?, ?, ?, ?)
-        `,
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
         [
           orderId,
           item.title,
+          item.image_url,
           item.quantity,
           item.unit_price,
-          item.line_total,
+          round2(item.quantity * item.unit_price),
         ]
       );
     }
@@ -207,61 +295,29 @@ router.post("/create-preference", async (req, res) => {
 
     const result = await preference.create({
       body: {
-        items: formattedItems.map((item) => ({
+        items: normalizedItems.map((item) => ({
           title: item.title,
           quantity: item.quantity,
-          currency_id: item.currency_id,
+          currency_id: "BRL",
           unit_price: item.unit_price,
         })),
-        external_reference: externalReference,
+        external_reference: String(orderId),
+        notification_url:
+          "https://api.campolimporp.com.br/api/checkout/webhook",
         back_urls: {
           success: "https://loja.campolimporp.com.br/sucesso",
           failure: "https://loja.campolimporp.com.br/erro",
           pending: "https://loja.campolimporp.com.br/pendente",
         },
         auto_return: "approved",
-        notification_url: "https://api.campolimporp.com.br/api/checkout/webhook",
       },
     });
 
     await connection.execute(
-      `
-      UPDATE orders
-      SET
-        preference_id = ?,
-        init_point = ?,
-        external_reference = ?
-      WHERE id = ?
-      `,
-      [
-        result.id || null,
-        result.init_point || null,
-        externalReference,
-        orderId,
-      ]
-    );
-
-    await connection.execute(
-      `
-      INSERT INTO payment_logs (
-        order_id,
-        customer_name,
-        action,
-        description,
-        amount,
-        payment_status
-      ) VALUES (?, ?, ?, ?, ?, ?)
-      `,
-      [
-        orderId,
-        customerName,
-        "order_created",
-        coupon
-          ? `Pedido criado com ${formattedItems.length} item(ns) | Cupom ${coupon.code} aplicado | Personagem ID ${characterId} | Discord ${discordUsername} (${discordId})`
-          : `Pedido criado com ${formattedItems.length} item(ns) | Personagem ID ${characterId} | Discord ${discordUsername} (${discordId})`,
-        totalAmount,
-        "pending",
-      ]
+      `UPDATE orders
+       SET preference_id = ?, init_point = ?, external_reference = ?
+       WHERE id = ?`,
+      [result.id || null, result.init_point || null, String(orderId), orderId]
     );
 
     await connection.commit();
@@ -270,20 +326,78 @@ router.post("/create-preference", async (req, res) => {
       orderId,
       init_point: result.init_point,
       sandbox_init_point: result.sandbox_init_point,
-      subtotal,
-      discount_amount: discountAmount,
-      total_amount: totalAmount,
-      coupon_code: coupon ? coupon.code : null,
     });
   } catch (error) {
     if (connection) await connection.rollback();
 
-    console.error("Erro ao criar pagamento:", error);
-
+    console.error("Erro checkout:", error);
     return res.status(500).json({
-      message: "Erro ao criar pagamento",
+      message: "Erro ao criar pagamento.",
       error: error.message,
     });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+router.post("/webhook", async (req, res) => {
+  let connection;
+
+  try {
+    const paymentId = req.query["data.id"] || req.body?.data?.id;
+
+    if (!paymentId) return res.sendStatus(200);
+
+    const mpRes = await axios.get(
+      `https://api.mercadopago.com/v1/payments/${paymentId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+        },
+      }
+    );
+
+    const payment = mpRes.data;
+
+    if (payment.status !== "approved") {
+      return res.sendStatus(200);
+    }
+
+    const orderId = payment.external_reference;
+
+    if (!orderId) return res.sendStatus(200);
+
+    connection = await pool.getConnection();
+
+    const [orders] = await connection.execute(
+      `SELECT * FROM orders WHERE id = ? LIMIT 1`,
+      [orderId]
+    );
+
+    if (!orders.length) return res.sendStatus(200);
+
+    const order = orders[0];
+
+    if (order.status === "paid") return res.sendStatus(200);
+
+    const [items] = await connection.execute(
+      `SELECT * FROM order_items WHERE order_id = ?`,
+      [orderId]
+    );
+
+    const channelId = await createDiscordChannelAndNotify(order, items, payment);
+
+    await connection.execute(
+      `UPDATE orders
+       SET status = ?, payment_id = ?, discord_channel_id = ?
+       WHERE id = ?`,
+      ["paid", String(payment.id), channelId, orderId]
+    );
+
+    return res.sendStatus(200);
+  } catch (error) {
+    console.error("Erro webhook:", error.response?.data || error.message);
+    return res.sendStatus(200);
   } finally {
     if (connection) connection.release();
   }

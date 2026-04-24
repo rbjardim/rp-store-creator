@@ -12,12 +12,52 @@ async function getRawBody(req) {
   return Buffer.concat(chunks);
 }
 
-export default async function handler(req, res) {
-  console.log("CHEGOU NO DISCORD INTERACTIONS", new Date().toISOString());
-  console.log("METHOD:", req.method);
-  console.log("PUBLIC KEY EXISTE:", !!process.env.DISCORD_PUBLIC_KEY);
-  console.log("BOT TOKEN EXISTE:", !!process.env.DISCORD_BOT_TOKEN);
+function validateDiscordRequest(req, rawBody) {
+  const signature = req.headers["x-signature-ed25519"];
+  const timestamp = req.headers["x-signature-timestamp"];
 
+  if (!signature || !timestamp || !process.env.DISCORD_PUBLIC_KEY) {
+    return false;
+  }
+
+  return nacl.sign.detached.verify(
+    Buffer.concat([Buffer.from(timestamp), rawBody]),
+    Buffer.from(signature, "hex"),
+    Buffer.from(process.env.DISCORD_PUBLIC_KEY, "hex")
+  );
+}
+
+async function setUserPermission(channelId, userId) {
+  return fetch(
+    `https://discord.com/api/v10/channels/${channelId}/permissions/${userId}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        type: 1,
+        allow: String(1024 | 2048 | 65536),
+        deny: "0",
+      }),
+    }
+  );
+}
+
+async function removeUserPermission(channelId, userId) {
+  return fetch(
+    `https://discord.com/api/v10/channels/${channelId}/permissions/${userId}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+      },
+    }
+  );
+}
+
+export default async function handler(req, res) {
   try {
     if (req.method !== "POST") {
       return res.status(405).end();
@@ -25,35 +65,12 @@ export default async function handler(req, res) {
 
     const rawBody = await getRawBody(req);
 
-    const signature = req.headers["x-signature-ed25519"];
-    const timestamp = req.headers["x-signature-timestamp"];
-
-    console.log("SIGNATURE EXISTE:", !!signature);
-    console.log("TIMESTAMP EXISTE:", !!timestamp);
-    console.log("RAW BODY:", rawBody.toString());
-
-    if (!signature || !timestamp || !process.env.DISCORD_PUBLIC_KEY) {
-      console.error("Faltando assinatura, timestamp ou PUBLIC KEY");
-      return res.status(401).end("missing signature");
-    }
-
-    const isValid = nacl.sign.detached.verify(
-      Buffer.concat([Buffer.from(timestamp), rawBody]),
-      Buffer.from(signature, "hex"),
-      Buffer.from(process.env.DISCORD_PUBLIC_KEY, "hex")
-    );
-
-    console.log("ASSINATURA VALIDA:", isValid);
-
-    if (!isValid) {
-      console.error("Assinatura inválida");
+    if (!validateDiscordRequest(req, rawBody)) {
+      console.error("Assinatura inválida ou ENV faltando");
       return res.status(401).end("invalid request signature");
     }
 
     const interaction = JSON.parse(rawBody.toString());
-
-    console.log("INTERACTION TYPE:", interaction.type);
-    console.log("CUSTOM ID:", interaction.data?.custom_id);
 
     if (interaction.type === 1) {
       return res.status(200).json({ type: 1 });
@@ -90,20 +107,20 @@ export default async function handler(req, res) {
 
       if (customId === "ticket_add_user") {
         return res.status(200).json({
-          type: 9,
+          type: 4,
           data: {
-            title: "Adicionar usuário",
-            custom_id: "modal_add_user",
+            content: "Selecione o membro que deseja **adicionar** ao ticket:",
+            flags: 64,
             components: [
               {
                 type: 1,
                 components: [
                   {
-                    type: 4,
-                    custom_id: "user_id",
-                    label: "ID do usuário",
-                    style: 1,
-                    required: true,
+                    type: 5,
+                    custom_id: "ticket_add_user_select",
+                    placeholder: "Buscar membro para adicionar",
+                    min_values: 1,
+                    max_values: 1,
                   },
                 ],
               },
@@ -114,20 +131,20 @@ export default async function handler(req, res) {
 
       if (customId === "ticket_remove_user") {
         return res.status(200).json({
-          type: 9,
+          type: 4,
           data: {
-            title: "Remover usuário",
-            custom_id: "modal_remove_user",
+            content: "Selecione o membro que deseja **remover** do ticket:",
+            flags: 64,
             components: [
               {
                 type: 1,
                 components: [
                   {
-                    type: 4,
-                    custom_id: "user_id",
-                    label: "ID do usuário",
-                    style: 1,
-                    required: true,
+                    type: 5,
+                    custom_id: "ticket_remove_user_select",
+                    placeholder: "Buscar membro para remover",
+                    min_values: 1,
+                    max_values: 1,
                   },
                 ],
               },
@@ -135,53 +152,31 @@ export default async function handler(req, res) {
           },
         });
       }
-    }
 
-    if (interaction.type === 5) {
-      const modalId = interaction.data.custom_id;
-      const channelId = interaction.channel_id;
-      const userId = interaction.data.components[0].components[0].value;
+      if (customId === "ticket_add_user_select") {
+        const userId = interaction.data.values[0];
 
-      if (modalId === "modal_add_user") {
-        await fetch(
-          `https://discord.com/api/v10/channels/${channelId}/permissions/${userId}`,
-          {
-            method: "PUT",
-            headers: {
-              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              type: 1,
-              allow: String(1024 | 2048 | 65536),
-              deny: "0",
-            }),
-          }
-        );
+        await setUserPermission(channelId, userId);
 
         return res.status(200).json({
           type: 4,
           data: {
             content: `✅ Usuário <@${userId}> adicionado ao ticket.`,
+            flags: 64,
           },
         });
       }
 
-      if (modalId === "modal_remove_user") {
-        await fetch(
-          `https://discord.com/api/v10/channels/${channelId}/permissions/${userId}`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-            },
-          }
-        );
+      if (customId === "ticket_remove_user_select") {
+        const userId = interaction.data.values[0];
+
+        await removeUserPermission(channelId, userId);
 
         return res.status(200).json({
           type: 4,
           data: {
             content: `❌ Usuário <@${userId}> removido do ticket.`,
+            flags: 64,
           },
         });
       }
@@ -197,10 +192,10 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error("ERRO DISCORD:", err);
 
-    return res.status(500).json({
+    return res.status(200).json({
       type: 4,
       data: {
-        content: "❌ Erro interno.",
+        content: "❌ Erro interno ao processar interação.",
         flags: 64,
       },
     });

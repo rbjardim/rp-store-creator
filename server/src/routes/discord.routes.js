@@ -105,12 +105,22 @@ router.get("/callback", async (req, res) => {
       });
     }
 
-    // 🔥 retorno sempre seguro
-    const returnUrl = state
+    let returnUrl = state
       ? String(state)
       : `${process.env.FRONTEND_URL || "http://localhost:5173"}/checkout`;
 
-    const url = new URL(returnUrl);
+    if (!returnUrl.startsWith("http")) {
+      returnUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/checkout`;
+    }
+
+    let url;
+
+    try {
+      url = new URL(returnUrl);
+    } catch (err) {
+      console.error("Return URL inválida:", returnUrl);
+      url = new URL(`${process.env.FRONTEND_URL || "http://localhost:5173"}/checkout`);
+    }
 
     url.searchParams.set("discord_id", discordUser.id);
     url.searchParams.set("discord_username", discordUser.username);

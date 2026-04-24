@@ -387,7 +387,7 @@ router.post("/webhook", async (req, res) => {
 
     const channelId = await createDiscordChannelAndNotify(order, items, payment);
 
-    await connection.execute(
+       await connection.execute(
       `UPDATE orders
        SET status = ?, payment_id = ?, discord_channel_id = ?
        WHERE id = ?`,
@@ -396,7 +396,13 @@ router.post("/webhook", async (req, res) => {
 
     return res.sendStatus(200);
   } catch (error) {
-    console.error("Erro webhook:", error.response?.data || error.message);
+    console.error("🔥 ERRO COMPLETO WEBHOOK:", {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+      stack: error.stack,
+    });
+
     return res.sendStatus(200);
   } finally {
     if (connection) connection.release();

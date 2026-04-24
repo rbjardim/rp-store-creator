@@ -7,25 +7,33 @@ router.get("/login", (req, res) => {
   const redirectUri = process.env.DISCORD_REDIRECT_URI;
 
   if (!clientId) {
-    return res.status(500).json({ message: "DISCORD_CLIENT_ID não configurado." });
+    return res
+      .status(500)
+      .json({ message: "DISCORD_CLIENT_ID não configurado." });
   }
 
   if (!redirectUri) {
-    return res.status(500).json({ message: "DISCORD_REDIRECT_URI não configurado." });
+    return res
+      .status(500)
+      .json({ message: "DISCORD_REDIRECT_URI não configurado." });
   }
 
+  // 🔥 SEMPRE GARANTIR /checkout
   const returnUrl =
-    req.query.returnUrl || process.env.FRONTEND_URL || "http://localhost:5173";
+    req.query.returnUrl ||
+    `${process.env.FRONTEND_URL || "http://localhost:5173"}/checkout`;
 
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: "identify",
-    state: encodeURIComponent(String(returnUrl)),
+    state: returnUrl, // 🔥 SEM encodeURIComponent
   });
 
-  return res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
+  return res.redirect(
+    `https://discord.com/oauth2/authorize?${params.toString()}`
+  );
 });
 
 router.get("/callback", async (req, res) => {
@@ -34,7 +42,9 @@ router.get("/callback", async (req, res) => {
     const state = req.query.state;
 
     if (!code) {
-      return res.status(400).json({ message: "Código do Discord não recebido." });
+      return res
+        .status(400)
+        .json({ message: "Código do Discord não recebido." });
     }
 
     const redirectUri = process.env.DISCORD_REDIRECT_URI;
@@ -47,19 +57,23 @@ router.get("/callback", async (req, res) => {
       });
     }
 
-    const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        grant_type: "authorization_code",
-        code: String(code),
-        redirect_uri: redirectUri,
-      }),
-    });
+    // 🔥 troca código por token
+    const tokenResponse = await fetch(
+      "https://discord.com/api/oauth2/token",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: "authorization_code",
+          code: String(code),
+          redirect_uri: redirectUri,
+        }),
+      }
+    );
 
     const tokenData = await tokenResponse.json();
 
@@ -71,11 +85,15 @@ router.get("/callback", async (req, res) => {
       });
     }
 
-    const userResponse = await fetch("https://discord.com/api/users/@me", {
-      headers: {
-        Authorization: `Bearer ${tokenData.access_token}`,
-      },
-    });
+    // 🔥 pega usuário
+    const userResponse = await fetch(
+      "https://discord.com/api/users/@me",
+      {
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+        },
+      }
+    );
 
     const discordUser = await userResponse.json();
 
@@ -87,15 +105,19 @@ router.get("/callback", async (req, res) => {
       });
     }
 
+    // 🔥 retorno sempre seguro
     const returnUrl = state
-      ? decodeURIComponent(String(state))
-      : process.env.FRONTEND_URL || "http://localhost:5173";
+      ? String(state)
+      : `${process.env.FRONTEND_URL || "http://localhost:5173"}/checkout`;
 
     const url = new URL(returnUrl);
 
     url.searchParams.set("discord_id", discordUser.id);
     url.searchParams.set("discord_username", discordUser.username);
-    url.searchParams.set("discord_avatar", discordUser.avatar || "");
+    url.searchParams.set(
+      "discord_avatar",
+      discordUser.avatar || ""
+    );
 
     return res.redirect(url.toString());
   } catch (error) {

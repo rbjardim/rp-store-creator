@@ -22,6 +22,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "https://rp-store-creator.vercel.app",
   "https://loja.campolimporp.com.br",
+  "http://localhost:8080",
 ];
 
 const corsOptions = {

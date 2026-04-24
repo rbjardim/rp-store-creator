@@ -385,14 +385,46 @@ router.post("/webhook", async (req, res) => {
       [orderId]
     );
 
-    const channelId = await createDiscordChannelAndNotify(order, items, payment);
-
-       await connection.execute(
+    await connection.execute(
       `UPDATE orders
-       SET status = ?, payment_id = ?, discord_channel_id = ?
+       SET status = ?, payment_id = ?
        WHERE id = ?`,
-      ["paid", String(payment.id), channelId, orderId]
+      ["paid", String(payment.id), orderId]
     );
+
+    try {
+      const discordRes = await axios.post(
+        `${process.env.DISCORD_PROXY_URL}/api/discord/order-paid`,
+        {
+          order,
+          items,
+          payment,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "x-webhook-secret": process.env.INTERNAL_WEBHOOK_SECRET,
+          },
+        }
+      );
+
+      const channelId = discordRes.data?.channelId || null;
+
+      if (channelId) {
+        await connection.execute(
+          `UPDATE orders
+           SET discord_channel_id = ?
+           WHERE id = ?`,
+          [channelId, orderId]
+        );
+      }
+    } catch (discordError) {
+      console.error("🔥 ERRO DISCORD PROXY:", {
+        message: discordError.message,
+        status: discordError.response?.status,
+        data: discordError.response?.data,
+      });
+    }
 
     return res.sendStatus(200);
   } catch (error) {
@@ -400,7 +432,6 @@ router.post("/webhook", async (req, res) => {
       message: error.message,
       status: error.response?.status,
       data: error.response?.data,
-      stack: error.stack,
     });
 
     return res.sendStatus(200);

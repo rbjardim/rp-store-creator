@@ -2,32 +2,27 @@ const express = require("express");
 
 const router = express.Router();
 
-const DISCORD_API = "https://discord.com/api/v10";
-
-function getFrontendUrl() {
-  return process.env.FRONTEND_URL || "https://loja.campolimporp.com.br";
-}
-
-function getRedirectUri() {
-  return (
-    process.env.DISCORD_REDIRECT_URI ||
-    "https://api.campolimporp.com.br/api/discord/callback"
-  );
-}
-
 router.get("/login", (req, res) => {
   const clientId = process.env.DISCORD_CLIENT_ID;
+  const redirectUri = process.env.DISCORD_REDIRECT_URI;
 
   if (!clientId) {
     return res.status(500).json({ message: "DISCORD_CLIENT_ID não configurado." });
   }
 
+  if (!redirectUri) {
+    return res.status(500).json({ message: "DISCORD_REDIRECT_URI não configurado." });
+  }
+
+  const returnUrl =
+    req.query.returnUrl || process.env.FRONTEND_URL || "http://localhost:5173";
+
   const params = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: getRedirectUri(),
+    redirect_uri: redirectUri,
     response_type: "code",
-    scope: "identify email",
-    prompt: "consent",
+    scope: "identify",
+    state: encodeURIComponent(String(returnUrl)),
   });
 
   return res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
@@ -35,69 +30,79 @@ router.get("/login", (req, res) => {
 
 router.get("/callback", async (req, res) => {
   try {
-    const { code } = req.query;
+    const code = req.query.code;
+    const state = req.query.state;
 
     if (!code) {
-      return res.redirect(`${getFrontendUrl()}/?discord_error=missing_code`);
+      return res.status(400).json({ message: "Código do Discord não recebido." });
     }
 
-    if (!process.env.DISCORD_CLIENT_ID || !process.env.DISCORD_CLIENT_SECRET) {
-      return res.redirect(`${getFrontendUrl()}/?discord_error=missing_config`);
+    const redirectUri = process.env.DISCORD_REDIRECT_URI;
+    const clientId = process.env.DISCORD_CLIENT_ID;
+    const clientSecret = process.env.DISCORD_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret || !redirectUri) {
+      return res.status(500).json({
+        message: "Variáveis do Discord não configuradas.",
+      });
     }
 
-    const tokenBody = new URLSearchParams({
-      client_id: process.env.DISCORD_CLIENT_ID,
-      client_secret: process.env.DISCORD_CLIENT_SECRET,
-      grant_type: "authorization_code",
-      code: String(code),
-      redirect_uri: getRedirectUri(),
-    });
-
-    const tokenResponse = await fetch(`${DISCORD_API}/oauth2/token`, {
+    const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: tokenBody,
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "authorization_code",
+        code: String(code),
+        redirect_uri: redirectUri,
+      }),
     });
 
     const tokenData = await tokenResponse.json();
 
-    if (!tokenResponse.ok || !tokenData.access_token) {
+    if (!tokenResponse.ok) {
       console.error("Erro token Discord:", tokenData);
-      return res.redirect(`${getFrontendUrl()}/?discord_error=token`);
+      return res.status(400).json({
+        message: "Erro ao autenticar com Discord.",
+        details: tokenData,
+      });
     }
 
-    const userResponse = await fetch(`${DISCORD_API}/users/@me`, {
+    const userResponse = await fetch("https://discord.com/api/users/@me", {
       headers: {
         Authorization: `Bearer ${tokenData.access_token}`,
       },
     });
 
-    const user = await userResponse.json();
+    const discordUser = await userResponse.json();
 
-    if (!userResponse.ok || !user.id) {
-      console.error("Erro user Discord:", user);
-      return res.redirect(`${getFrontendUrl()}/?discord_error=user`);
+    if (!userResponse.ok) {
+      console.error("Erro usuário Discord:", discordUser);
+      return res.status(400).json({
+        message: "Erro ao buscar usuário do Discord.",
+        details: discordUser,
+      });
     }
 
-    const username = user.discriminator && user.discriminator !== "0"
-      ? `${user.username}#${user.discriminator}`
-      : user.username;
+    const returnUrl = state
+      ? decodeURIComponent(String(state))
+      : process.env.FRONTEND_URL || "http://localhost:5173";
 
-    const params = new URLSearchParams({
-      discord_id: user.id,
-      discord_username: username || "Discord",
-    });
+    const url = new URL(returnUrl);
 
-    if (user.email) {
-      params.set("discord_email", user.email);
-    }
+    url.searchParams.set("discord_id", discordUser.id);
+    url.searchParams.set("discord_username", discordUser.username);
+    url.searchParams.set("discord_avatar", discordUser.avatar || "");
 
-    return res.redirect(`${getFrontendUrl()}/?${params.toString()}`);
+    return res.redirect(url.toString());
   } catch (error) {
     console.error("Erro callback Discord:", error);
-    return res.redirect(`${getFrontendUrl()}/?discord_error=server`);
+    return res.status(500).json({
+      message: "Erro interno ao conectar Discord.",
+    });
   }
 });
 

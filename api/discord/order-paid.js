@@ -208,6 +208,11 @@ export default async function handler(req, res) {
                       value: `#${order.id}`,
                       inline: true,
                     },
+                    {
+                        name: "🧾 ID Pagamento",
+                        value: String(payment.id),
+                        inline: false,
+                    },
                   ],
                   image: imageUrl ? { url: imageUrl } : undefined,
                   footer: {

@@ -81,13 +81,11 @@ const Checkout = () => {
   }, []);
 
   const connectDiscord = () => {
-    saveForm();
+  saveForm();
 
-    const returnUrl = encodeURIComponent(
-      `${window.location.origin}/checkout`
-    );
+  const returnUrl = encodeURIComponent(`${window.location.origin}/checkout`);
 
-    window.location.href = `${API_URL}/discord/login?returnUrl=${returnUrl}`;
+  window.location.href = `/api/discord/login?returnUrl=${returnUrl}`;
   };
 
   const applyCoupon = async () => {

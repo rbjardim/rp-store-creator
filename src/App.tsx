@@ -11,6 +11,7 @@ import AdminPanel from "./pages/AdminPanel";
 import NotFound from "./pages/NotFound";
 import Terms from "@/pages/Terms";
 import Checkout from "./pages/Checkout";
+import Sucesso from "./pages/Sucesso";
 
 const queryClient = new QueryClient();
 
@@ -29,6 +30,7 @@ const App = () => (
               <Route path="/admin" element={<AdminPanel />} />
               <Route path="*" element={<NotFound />} />
               <Route path="/termos" element={<Terms />} />
+              <Route path="/sucesso" element={<Sucesso />} />
             </Routes>
           </BrowserRouter>
         </TooltipProvider>

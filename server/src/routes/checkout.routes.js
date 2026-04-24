@@ -305,9 +305,9 @@ router.post("/create-preference", async (req, res) => {
         notification_url:
           "https://api.campolimporp.com.br/api/checkout/webhook",
         back_urls: {
-        success: "https://loja.campolimporp.com.br/sucesso",
+        success: "https://loja.campolimporp.com.br",
         failure: "https://loja.campolimporp.com.br",
-        pending: "https://loja.campolimporp.com.br/pendente",
+        pending: "https://loja.campolimporp.com.br",
       },
         auto_return: "approved",
       },

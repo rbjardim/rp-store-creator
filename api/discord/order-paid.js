@@ -23,6 +23,11 @@ function getFullImageUrl(imageUrl) {
   return `${apiBase.replace(/\/$/, "")}${imageUrl}`;
 }
 
+const ADMIN_ROLE_IDS = [
+  "1471345419366826098",
+  "1471345421610651741",
+];
+
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") {
@@ -33,7 +38,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ message: "Não autorizado" });
     }
 
-    const { order, items, payment } = req.body;
+    const { order, items = [], payment } = req.body;
 
     const botToken = process.env.DISCORD_BOT_TOKEN;
     const guildId = process.env.DISCORD_GUILD_ID;
@@ -44,9 +49,33 @@ export default async function handler(req, res) {
     }
 
     const paymentMethod =
-      payment.payment_method_id || payment.payment_type_id || "Não informado";
+      payment?.payment_method_id || payment?.payment_type_id || "Não informado";
 
     const channelName = `doacao-${cleanChannelName(order.discord_username)}`;
+
+    const permissionOverwrites = [
+      {
+        id: guildId,
+        type: 0,
+        deny: String(1024), // VIEW_CHANNEL
+      },
+      {
+        id: order.discord_id,
+        type: 1,
+        allow: String(1024 | 2048 | 65536), // VIEW_CHANNEL, SEND_MESSAGES, READ_MESSAGE_HISTORY
+      },
+      ...ADMIN_ROLE_IDS.map((roleId) => ({
+        id: roleId,
+        type: 0,
+        allow: String(
+          1024 | // VIEW_CHANNEL
+          2048 | // SEND_MESSAGES
+          65536 | // READ_MESSAGE_HISTORY
+          8192 | // MANAGE_MESSAGES
+          16 // MANAGE_CHANNELS
+        ),
+      })),
+    ];
 
     const channelRes = await fetch(
       `https://discord.com/api/v10/guilds/${guildId}/channels`,
@@ -60,6 +89,7 @@ export default async function handler(req, res) {
           name: channelName,
           type: 0,
           parent_id: categoryId,
+          permission_overwrites: permissionOverwrites,
         }),
       }
     );
@@ -92,7 +122,10 @@ export default async function handler(req, res) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        content: `📦 Nova doação aprovada para <@${order.discord_id}>`,
+        content:
+          `Olá, <@${order.discord_id}>! 🎉\n\n` +
+          `Sua doação na **Loja de Doações do Campo Limpo** foi confirmada com sucesso.\n\n` +
+          ADMIN_ROLE_IDS.map((id) => `<@&${id}>`).join(" "),
         embeds: [
           {
             title: "🎉 Nova doação aprovada!",
@@ -132,7 +165,7 @@ export default async function handler(req, res) {
               },
               {
                 name: "🧾 ID Pagamento",
-                value: String(payment.id),
+                value: String(payment?.id),
                 inline: false,
               },
             ],
@@ -141,6 +174,43 @@ export default async function handler(req, res) {
               text: `Pedido #${order.id}`,
             },
             timestamp: new Date().toISOString(),
+          },
+          {
+            title: "🔧 Painel administrativo do ticket",
+            description:
+              "Use os botões abaixo para gerenciar este ticket.\n\n" +
+              "➕ **Adicionar pessoa**\n" +
+              "➖ **Remover pessoa**\n" +
+              "🔒 **Fechar ticket** — apaga este canal.",
+            color: 16755200,
+          },
+        ],
+        components: [
+          {
+            type: 1,
+            components: [
+              {
+                type: 2,
+                style: 3,
+                label: "Adicionar pessoa",
+                custom_id: "ticket_add_user",
+                emoji: { name: "➕" },
+              },
+              {
+                type: 2,
+                style: 2,
+                label: "Remover pessoa",
+                custom_id: "ticket_remove_user",
+                emoji: { name: "➖" },
+              },
+              {
+                type: 2,
+                style: 4,
+                label: "Fechar ticket",
+                custom_id: "ticket_close",
+                emoji: { name: "🔒" },
+              },
+            ],
           },
         ],
       }),
@@ -209,9 +279,9 @@ export default async function handler(req, res) {
                       inline: true,
                     },
                     {
-                        name: "🧾 ID Pagamento",
-                        value: String(payment.id),
-                        inline: false,
+                      name: "🧾 ID Pagamento",
+                      value: String(payment?.id),
+                      inline: false,
                     },
                   ],
                   image: imageUrl ? { url: imageUrl } : undefined,

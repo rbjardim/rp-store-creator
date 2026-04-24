@@ -59,7 +59,7 @@ router.get("/callback", async (req, res) => {
 
     // 🔥 troca código por token
     const tokenResponse = await fetch(
-      "https://discord.com/api/oauth2/token",
+      "https://discord.com/api/v10/oauth2/token",
       {
         method: "POST",
         headers: {
@@ -87,7 +87,7 @@ router.get("/callback", async (req, res) => {
 
     // 🔥 pega usuário
     const userResponse = await fetch(
-      "https://discord.com/api/users/@me",
+      "https://discord.com/api/v10/users/@me",
       {
         headers: {
           Authorization: `Bearer ${tokenData.access_token}`,

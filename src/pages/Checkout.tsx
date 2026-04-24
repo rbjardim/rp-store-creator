@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { API_URL } from "@/lib/api";
 
 const Checkout = () => {
-  const { items, total, clearCart } = useCart();
+  const { items, total } = useCart();
 
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -17,18 +17,48 @@ const Checkout = () => {
   const formatPrice = (v: number) =>
     v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  // 🔥 pegar retorno do Discord
-  useEffect(() => {
-    const saved = localStorage.getItem("checkout_discord_user");
+  // 🔥 SALVAR FORMULÁRIO
+  const saveForm = () => {
+    localStorage.setItem(
+      "checkout_form",
+      JSON.stringify({
+        customerName,
+        customerEmail,
+        characterId,
+        coupon,
+      })
+    );
+  };
 
-    if (saved) {
+  // 🔥 CARREGAR DADOS + DISCORD
+  useEffect(() => {
+    // carregar form salvo
+    const savedForm = localStorage.getItem("checkout_form");
+
+    if (savedForm) {
       try {
-        setDiscordUser(JSON.parse(saved));
+        const data = JSON.parse(savedForm);
+        setCustomerName(data.customerName || "");
+        setCustomerEmail(data.customerEmail || "");
+        setCharacterId(data.characterId || "");
+        setCoupon(data.coupon || "");
+      } catch {
+        localStorage.removeItem("checkout_form");
+      }
+    }
+
+    // carregar discord salvo
+    const savedDiscord = localStorage.getItem("checkout_discord_user");
+
+    if (savedDiscord) {
+      try {
+        setDiscordUser(JSON.parse(savedDiscord));
       } catch {
         localStorage.removeItem("checkout_discord_user");
       }
     }
 
+    // pegar retorno da URL
     const params = new URLSearchParams(window.location.search);
 
     const discordId = params.get("discord_id");
@@ -46,12 +76,17 @@ const Checkout = () => {
       params.delete("discord_id");
       params.delete("discord_username");
 
-      window.history.replaceState({}, "", window.location.pathname);
+      window.history.replaceState({}, "", "/checkout");
     }
   }, []);
 
   const connectDiscord = () => {
-    const returnUrl = encodeURIComponent(window.location.href);
+    saveForm();
+
+    const returnUrl = encodeURIComponent(
+      `${window.location.origin}/checkout`
+    );
+
     window.location.href = `${API_URL}/discord/login?returnUrl=${returnUrl}`;
   };
 
@@ -190,7 +225,10 @@ const Checkout = () => {
           placeholder="Cupom"
           className="w-full p-2 rounded bg-black text-white border"
         />
-        <button onClick={applyCoupon} className="mt-2 w-full bg-gray-700 p-2 rounded">
+        <button
+          onClick={applyCoupon}
+          className="mt-2 w-full bg-gray-700 p-2 rounded"
+        >
           Aplicar cupom
         </button>
       </div>

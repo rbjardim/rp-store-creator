@@ -12,6 +12,8 @@ import NotFound from "./pages/NotFound";
 import Terms from "@/pages/Terms";
 import Checkout from "./pages/Checkout";
 import Sucesso from "./pages/Sucesso";
+import Reprovado from "./pages/Reprovado";
+import Pendente from "./pages/Pendente";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +33,8 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
               <Route path="/termos" element={<Terms />} />
               <Route path="/sucesso" element={<Sucesso />} />
+              <Route path="/erro" element={<Reprovado />} />
+              <Route path="/pendente" element={<Pendente />} />
             </Routes>
           </BrowserRouter>
         </TooltipProvider>

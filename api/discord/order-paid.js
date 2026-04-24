@@ -29,9 +29,7 @@ export default async function handler(req, res) {
       return res.status(405).json({ message: "Método não permitido" });
     }
 
-    const secret = req.headers["x-webhook-secret"];
-
-    if (secret !== process.env.INTERNAL_WEBHOOK_SECRET) {
+    if (req.headers["x-webhook-secret"] !== process.env.INTERNAL_WEBHOOK_SECRET) {
       return res.status(401).json({ message: "Não autorizado" });
     }
 
@@ -77,6 +75,9 @@ export default async function handler(req, res) {
 
     const channelId = channelData.id;
 
+    const firstItem = items?.[0];
+    const firstImageUrl = getFullImageUrl(firstItem?.image_url);
+
     const itemsText = items
       .map(
         (i) =>
@@ -91,21 +92,57 @@ export default async function handler(req, res) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        content: `
-🎉 **Nova doação aprovada!**
-
-👤 **Nome:** ${order.customer_name}
-📧 **Email:** ${order.customer_email}
-🎮 **ID Personagem:** ${order.character_id}
-💬 **Discord:** <@${order.discord_id}>
-
-🛒 **Itens:**
-${itemsText}
-
-💰 **Total:** ${formatBRL(order.total_amount)}
-💳 **Forma de pagamento:** ${paymentMethod}
-🧾 **Pagamento ID:** ${payment.id}
-        `,
+        content: `📦 Nova doação aprovada para <@${order.discord_id}>`,
+        embeds: [
+          {
+            title: "🎉 Nova doação aprovada!",
+            description:
+              "Uma nova doação foi confirmada na **Loja de Doações do Campo Limpo**.",
+            color: 5763719,
+            fields: [
+              {
+                name: "👤 Comprador",
+                value: `${order.customer_name}\n${order.customer_email}`,
+                inline: true,
+              },
+              {
+                name: "🎮 ID Personagem",
+                value: String(order.character_id),
+                inline: true,
+              },
+              {
+                name: "💬 Discord",
+                value: `<@${order.discord_id}>\n\`${order.discord_username}\``,
+                inline: true,
+              },
+              {
+                name: "🛒 Item(ns)",
+                value: itemsText || "Nenhum item informado",
+                inline: false,
+              },
+              {
+                name: "💰 Total",
+                value: formatBRL(order.total_amount),
+                inline: true,
+              },
+              {
+                name: "💳 Pagamento",
+                value: String(paymentMethod),
+                inline: true,
+              },
+              {
+                name: "🧾 ID Pagamento",
+                value: String(payment.id),
+                inline: false,
+              },
+            ],
+            image: firstImageUrl ? { url: firstImageUrl } : undefined,
+            footer: {
+              text: `Pedido #${order.id}`,
+            },
+            timestamp: new Date().toISOString(),
+          },
+        ],
       }),
     });
 
@@ -134,25 +171,49 @@ ${itemsText}
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              content: "✅ **Item adquirido com sucesso!**",
+              content:
+                `Olá, <@${order.discord_id}>! 🎉\n\n` +
+                `Sua doação na **Loja de Doações do Campo Limpo** foi confirmada com sucesso.\n` +
+                `O item adquirido já foi registrado em nosso sistema. Guarde esta mensagem como comprovante. ❤️`,
               embeds: [
                 {
-                  title: item.product_name,
-                  description: `
-🎮 **ID Personagem:** ${order.character_id}
-📧 **Email:** ${order.customer_email}
-
-📦 **Quantidade:** ${item.quantity}
-💰 **Preço:** ${formatBRL(item.line_total)}
-💳 **Forma de pagamento:** ${paymentMethod}
-
-Obrigado pela sua doação! ❤️
-                  `,
+                  title: `✅ Item adquirido: ${item.product_name}`,
+                  description:
+                    `Muito obrigado por apoiar o **Campo Limpo Roleplay**!\n\n` +
+                    `Caso precise de suporte, informe o número do pedido para a equipe.`,
                   color: 5763719,
+                  fields: [
+                    {
+                      name: "🎮 ID Personagem",
+                      value: String(order.character_id),
+                      inline: true,
+                    },
+                    {
+                      name: "📦 Quantidade",
+                      value: String(item.quantity),
+                      inline: true,
+                    },
+                    {
+                      name: "💰 Valor",
+                      value: formatBRL(item.line_total),
+                      inline: true,
+                    },
+                    {
+                      name: "💳 Forma de pagamento",
+                      value: String(paymentMethod),
+                      inline: true,
+                    },
+                    {
+                      name: "🧾 Pedido",
+                      value: `#${order.id}`,
+                      inline: true,
+                    },
+                  ],
                   image: imageUrl ? { url: imageUrl } : undefined,
                   footer: {
-                    text: `Pedido #${order.id}`,
+                    text: "Loja de Doações • Campo Limpo Roleplay",
                   },
+                  timestamp: new Date().toISOString(),
                 },
               ],
             }),

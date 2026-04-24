@@ -7,18 +7,13 @@ router.get("/login", (req, res) => {
   const redirectUri = process.env.DISCORD_REDIRECT_URI;
 
   if (!clientId) {
-    return res
-      .status(500)
-      .json({ message: "DISCORD_CLIENT_ID não configurado." });
+    return res.status(500).json({ message: "DISCORD_CLIENT_ID não configurado." });
   }
 
   if (!redirectUri) {
-    return res
-      .status(500)
-      .json({ message: "DISCORD_REDIRECT_URI não configurado." });
+    return res.status(500).json({ message: "DISCORD_REDIRECT_URI não configurado." });
   }
 
-  // 🔥 SEMPRE GARANTIR /checkout
   const returnUrl =
     req.query.returnUrl ||
     `${process.env.FRONTEND_URL || "http://localhost:5173"}/checkout`;
@@ -28,12 +23,10 @@ router.get("/login", (req, res) => {
     redirect_uri: redirectUri,
     response_type: "code",
     scope: "identify",
-    state: returnUrl, // 🔥 SEM encodeURIComponent
+    state: String(returnUrl),
   });
 
-  return res.redirect(
-    `https://discord.com/oauth2/authorize?${params.toString()}`
-  );
+  return res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
 });
 
 router.get("/callback", async (req, res) => {
@@ -42,9 +35,7 @@ router.get("/callback", async (req, res) => {
     const state = req.query.state;
 
     if (!code) {
-      return res
-        .status(400)
-        .json({ message: "Código do Discord não recebido." });
+      return res.status(400).json({ message: "Código do Discord não recebido." });
     }
 
     const redirectUri = process.env.DISCORD_REDIRECT_URI;
@@ -57,25 +48,32 @@ router.get("/callback", async (req, res) => {
       });
     }
 
-    // 🔥 troca código por token
-    const tokenResponse = await fetch(
-      "https://discord.com/api/v10/oauth2/token",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          grant_type: "authorization_code",
-          code: String(code),
-          redirect_uri: redirectUri,
-        }),
-      }
-    );
+    const tokenResponse = await fetch("https://discord.com/api/v10/oauth2/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "authorization_code",
+        code: String(code),
+        redirect_uri: redirectUri,
+      }),
+    });
 
-    const tokenData = await tokenResponse.json();
+    const tokenText = await tokenResponse.text();
+
+    let tokenData;
+    try {
+      tokenData = JSON.parse(tokenText);
+    } catch {
+      console.error("Resposta TOKEN não é JSON:", tokenText.slice(0, 500));
+      return res.status(400).json({
+        message: "Discord retornou resposta inválida ao buscar token.",
+      });
+    }
 
     if (!tokenResponse.ok) {
       console.error("Erro token Discord:", tokenData);
@@ -85,17 +83,24 @@ router.get("/callback", async (req, res) => {
       });
     }
 
-    // 🔥 pega usuário
-    const userResponse = await fetch(
-      "https://discord.com/api/v10/users/@me",
-      {
-        headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
-        },
-      }
-    );
+    const userResponse = await fetch("https://discord.com/api/v10/users/@me", {
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        Accept: "application/json",
+      },
+    });
 
-    const discordUser = await userResponse.json();
+    const userText = await userResponse.text();
+
+    let discordUser;
+    try {
+      discordUser = JSON.parse(userText);
+    } catch {
+      console.error("Resposta USER não é JSON:", userText.slice(0, 500));
+      return res.status(400).json({
+        message: "Discord retornou resposta inválida ao buscar usuário.",
+      });
+    }
 
     if (!userResponse.ok) {
       console.error("Erro usuário Discord:", discordUser);
@@ -105,33 +110,23 @@ router.get("/callback", async (req, res) => {
       });
     }
 
-    let returnUrl = state
-      ? String(state)
-      : `${process.env.FRONTEND_URL || "http://localhost:5173"}/checkout`;
+    let returnUrl =
+      state || `${process.env.FRONTEND_URL || "http://localhost:5173"}/checkout`;
 
-    if (!returnUrl.startsWith("http")) {
+    if (!String(returnUrl).startsWith("http")) {
       returnUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/checkout`;
     }
 
-    let url;
-
-    try {
-      url = new URL(returnUrl);
-    } catch (err) {
-      console.error("Return URL inválida:", returnUrl);
-      url = new URL(`${process.env.FRONTEND_URL || "http://localhost:5173"}/checkout`);
-    }
+    const url = new URL(String(returnUrl));
 
     url.searchParams.set("discord_id", discordUser.id);
     url.searchParams.set("discord_username", discordUser.username);
-    url.searchParams.set(
-      "discord_avatar",
-      discordUser.avatar || ""
-    );
+    url.searchParams.set("discord_avatar", discordUser.avatar || "");
 
     return res.redirect(url.toString());
   } catch (error) {
-    console.error("Erro callback Discord:", error);
+    console.error("Erro callback Discord:", error.message);
+    console.error(error.stack);
     return res.status(500).json({
       message: "Erro interno ao conectar Discord.",
     });

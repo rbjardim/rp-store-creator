@@ -65,19 +65,60 @@ function escapeHtml(text = "") {
     .replaceAll("'", "&#039;");
 }
 
-function getPurchaseId(messages) {
+function getPaymentId(messages) {
   for (const msg of messages) {
     for (const embed of msg.embeds || []) {
-      const footerText = embed.footer?.text || "";
-      const match = footerText.match(/Pedido\s*#?([a-zA-Z0-9-_]+)/i);
-      if (match) return match[1];
+      for (const field of embed.fields || []) {
+        if (String(field.name || "").includes("ID Pagamento")) {
+          return String(field.value || "").replace(/[`#]/g, "").trim();
+        }
+      }
     }
   }
 
   return "sem-id";
 }
 
-async function sendTranscript(channelName, channelId, closedBy) {
+function buildMentionMaps(messages) {
+  const users = new Map();
+  const roles = new Map();
+
+  for (const msg of messages) {
+    if (msg.author?.id) {
+      users.set(msg.author.id, msg.author.global_name || msg.author.username);
+    }
+
+    for (const user of msg.mentions || []) {
+      users.set(user.id, user.global_name || user.username);
+    }
+
+    for (const roleId of msg.mention_roles || []) {
+      roles.set(roleId, `Cargo ${roleId}`);
+    }
+  }
+
+  return { users, roles };
+}
+
+function replaceMentions(text = "", maps) {
+  let result = String(text);
+
+  result = result.replace(/<@!?(\d+)>/g, (_, id) => {
+    return `@${maps.users.get(id) || id}`;
+  });
+
+  result = result.replace(/<@&(\d+)>/g, (_, id) => {
+    return `@${maps.roles.get(id) || id}`;
+  });
+
+  result = result.replace(/<#(\d+)>/g, (_, id) => {
+    return `#${id}`;
+  });
+
+  return result;
+}
+
+async function sendTranscript(channelName, channelId, closedBy, closedByName) {
   const backupChannelId = process.env.DISCORD_TRANSCRIPT_CHANNEL_ID;
 
   if (!backupChannelId) {
@@ -86,11 +127,17 @@ async function sendTranscript(channelName, channelId, closedBy) {
   }
 
   const messages = await getAllMessages(channelId);
-  const purchaseId = getPurchaseId(messages);
+  const paymentId = getPaymentId(messages);
+  const mentionMaps = buildMentionMaps(messages);
+
+  if (closedBy && closedByName) {
+    mentionMaps.users.set(closedBy, closedByName);
+  }
 
   const htmlMessages = messages
     .map((msg) => {
-      const name = msg.author?.global_name || msg.author?.username || "Desconhecido";
+      const name =
+        msg.author?.global_name || msg.author?.username || "Desconhecido";
 
       const avatar = msg.author?.avatar
         ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`
@@ -98,15 +145,16 @@ async function sendTranscript(channelName, channelId, closedBy) {
 
       const date = new Date(msg.timestamp).toLocaleString("pt-BR");
 
-      const content = escapeHtml(msg.content || "").replaceAll("\n", "<br>");
+      const readableContent = replaceMentions(msg.content || "", mentionMaps);
+      const content = escapeHtml(readableContent).replaceAll("\n", "<br>");
 
       const attachments = msg.attachments?.length
         ? msg.attachments
             .map(
               (a) =>
-                `<div class="attachment"><a href="${escapeHtml(a.url)}" target="_blank">${escapeHtml(
-                  a.filename || a.url
-                )}</a></div>`
+                `<div class="attachment"><a href="${escapeHtml(
+                  a.url
+                )}" target="_blank">${escapeHtml(a.filename || a.url)}</a></div>`
             )
             .join("")
         : "";
@@ -132,7 +180,7 @@ async function sendTranscript(channelName, channelId, closedBy) {
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Transcript da compra #${escapeHtml(purchaseId)}</title>
+  <title>Transcript da compra ${escapeHtml(paymentId)}</title>
   <style>
     body { background:#313338; color:#dbdee1; font-family:Arial,sans-serif; margin:0; }
     .header { background:#1e1f22; padding:24px; border-bottom:1px solid #3f4147; }
@@ -143,17 +191,19 @@ async function sendTranscript(channelName, channelId, closedBy) {
     .avatar { width:42px; height:42px; border-radius:50%; }
     .body span { color:#949ba4; font-size:12px; margin-left:8px; }
     .content { margin-top:4px; line-height:1.45; word-break:break-word; }
+    .attachment { margin-top:8px; }
     .attachment a { color:#00a8fc; }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>Transcript da compra #${escapeHtml(purchaseId)}</h1>
+    <h1>Transcript da compra ${escapeHtml(paymentId)}</h1>
     <p><strong>Canal:</strong> ${escapeHtml(channelName)}</p>
     <p><strong>ID do canal:</strong> ${channelId}</p>
-    <p><strong>Fechado por:</strong> ${closedBy}</p>
+    <p><strong>Fechado por:</strong> ${escapeHtml(closedByName || closedBy)}</p>
     <p><strong>Data:</strong> ${new Date().toLocaleString("pt-BR")}</p>
   </div>
+
   <div class="container">
     ${htmlMessages || "<p>Nenhuma mensagem encontrada.</p>"}
   </div>
@@ -161,14 +211,14 @@ async function sendTranscript(channelName, channelId, closedBy) {
 </html>
 `;
 
-  const fileName = `transcript-compra-${purchaseId}.html`;
+  const fileName = `transcript-pagamento-${paymentId}.html`;
 
   const form = new FormData();
 
   form.append(
     "payload_json",
     JSON.stringify({
-      content: "📄 Gerando transcript...",
+      content: "",
     })
   );
 
@@ -206,10 +256,10 @@ async function sendTranscript(channelName, channelId, closedBy) {
       content: "",
       embeds: [
         {
-          title: `📄 Transcript da compra #${purchaseId}`,
+          title: `📄 Transcript da compra ${paymentId}`,
           description:
             `O ticket foi fechado e o transcript foi salvo como backup.\n\n` +
-            `Clique no botão abaixo para abrir o transcript.`,
+            `[Clique aqui para abrir o transcript](${transcriptUrl})`,
           color: 16755200,
           fields: [
             {
@@ -223,8 +273,8 @@ async function sendTranscript(channelName, channelId, closedBy) {
               inline: true,
             },
             {
-              name: "ID da compra",
-              value: `#${purchaseId}`,
+              name: "ID Pagamento",
+              value: `\`${paymentId}\``,
               inline: true,
             },
           ],
@@ -287,12 +337,18 @@ export default async function handler(req, res) {
       const id = interaction.data.custom_id;
       const channelId = interaction.channel_id;
       const userId = interaction.member.user.id;
+      const userName =
+        interaction.member.nick ||
+        interaction.member.user.global_name ||
+        interaction.member.user.username ||
+        userId;
 
       if (id === "ticket_close") {
         await sendTranscript(
           interaction.channel?.name || "ticket",
           channelId,
-          userId
+          userId,
+          userName
         );
 
         await discordFetch(`/channels/${channelId}`, {

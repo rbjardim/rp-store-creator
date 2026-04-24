@@ -1,44 +1,70 @@
+import nacl from "tweetnacl";
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+async function getRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 export default async function handler(req, res) {
   try {
-    if (req.method !== "POST") {
-      return res.status(405).end();
+    if (req.method !== "POST") return res.status(405).end();
+
+    const rawBody = await getRawBody(req);
+    const signature = req.headers["x-signature-ed25519"];
+    const timestamp = req.headers["x-signature-timestamp"];
+
+    const isValid = nacl.sign.detached.verify(
+      Buffer.from(timestamp + rawBody),
+      Buffer.from(signature, "hex"),
+      Buffer.from(process.env.DISCORD_PUBLIC_KEY, "hex")
+    );
+
+    if (!isValid) {
+      return res.status(401).end("invalid request signature");
     }
 
-    const interaction = req.body;
+    const interaction = JSON.parse(rawBody.toString());
 
-    // Discord ping (obrigatório)
+    // PING
     if (interaction.type === 1) {
       return res.json({ type: 1 });
     }
 
-    // Clique de botão
+    // BOTÕES
     if (interaction.type === 3) {
-      const { custom_id } = interaction.data;
+      const customId = interaction.data.custom_id;
       const channelId = interaction.channel_id;
-      const userId = interaction.member.user.id;
 
-      // 🔒 FECHAR TICKET
-      if (custom_id === "ticket_close") {
-        await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-          },
-        });
-
-        return res.json({
+      if (customId === "ticket_close") {
+        res.json({
           type: 4,
-          data: {
-            content: "🔒 Ticket fechado.",
-            flags: 64,
-          },
+          data: { content: "🔒 Fechando ticket...", flags: 64 },
         });
+
+        setTimeout(async () => {
+          await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+            },
+          });
+        }, 1000);
+
+        return;
       }
 
-      // ➕ ADICIONAR USUÁRIO
-      if (custom_id === "ticket_add_user") {
+      if (customId === "ticket_add_user") {
         return res.json({
-          type: 9, // abre modal
+          type: 9,
           data: {
             title: "Adicionar usuário",
             custom_id: "modal_add_user",
@@ -51,8 +77,6 @@ export default async function handler(req, res) {
                     custom_id: "user_id",
                     label: "ID do usuário",
                     style: 1,
-                    min_length: 17,
-                    max_length: 20,
                     required: true,
                   },
                 ],
@@ -62,8 +86,7 @@ export default async function handler(req, res) {
         });
       }
 
-      // ➖ REMOVER USUÁRIO
-      if (custom_id === "ticket_remove_user") {
+      if (customId === "ticket_remove_user") {
         return res.json({
           type: 9,
           data: {
@@ -88,15 +111,12 @@ export default async function handler(req, res) {
       }
     }
 
-    // 📥 RESPOSTA DOS MODAIS
+    // MODAIS
     if (interaction.type === 5) {
       const modalId = interaction.data.custom_id;
       const channelId = interaction.channel_id;
+      const userId = interaction.data.components[0].components[0].value;
 
-      const userId =
-        interaction.data.components[0].components[0].value;
-
-      // ➕ ADD USER
       if (modalId === "modal_add_user") {
         await fetch(
           `https://discord.com/api/v10/channels/${channelId}/permissions/${userId}`,
@@ -107,21 +127,18 @@ export default async function handler(req, res) {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              allow: "1024",
               type: 1,
+              allow: String(1024 | 2048 | 65536),
             }),
           }
         );
 
         return res.json({
           type: 4,
-          data: {
-            content: `✅ Usuário <@${userId}> adicionado.`,
-          },
+          data: { content: `✅ Usuário <@${userId}> adicionado.` },
         });
       }
 
-      // ➖ REMOVE USER
       if (modalId === "modal_remove_user") {
         await fetch(
           `https://discord.com/api/v10/channels/${channelId}/permissions/${userId}`,
@@ -135,14 +152,12 @@ export default async function handler(req, res) {
 
         return res.json({
           type: 4,
-          data: {
-            content: `❌ Usuário <@${userId}> removido.`,
-          },
+          data: { content: `❌ Usuário <@${userId}> removido.` },
         });
       }
     }
 
-    return res.status(200).end();
+    return res.json({ type: 4, data: { content: "OK", flags: 64 } });
   } catch (err) {
     console.error(err);
     return res.status(500).end();

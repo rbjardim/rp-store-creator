@@ -80,36 +80,34 @@ export default async function handler(req, res) {
       const customId = interaction.data.custom_id;
       const channelId = interaction.channel_id;
 
+      // 🔒 FECHAR TICKET (CORRIGIDO)
       if (customId === "ticket_close") {
-        res.status(200).json({
+        try {
+          await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+            },
+          });
+        } catch (e) {
+          console.error("Erro ao deletar canal:", e);
+        }
+
+        return res.status(200).json({
           type: 4,
           data: {
-            content: "🔒 Fechando ticket...",
+            content: "🔒 Ticket fechado.",
             flags: 64,
           },
         });
-
-        setTimeout(async () => {
-          try {
-            await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
-              method: "DELETE",
-              headers: {
-                Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-              },
-            });
-          } catch (e) {
-            console.error("Erro ao deletar canal:", e);
-          }
-        }, 1000);
-
-        return;
       }
 
+      // ➕ ADICIONAR USUÁRIO
       if (customId === "ticket_add_user") {
         return res.status(200).json({
           type: 4,
           data: {
-            content: "Selecione o membro que deseja **adicionar** ao ticket:",
+            content: "Selecione o membro para adicionar:",
             flags: 64,
             components: [
               {
@@ -118,7 +116,7 @@ export default async function handler(req, res) {
                   {
                     type: 5,
                     custom_id: "ticket_add_user_select",
-                    placeholder: "Buscar membro para adicionar",
+                    placeholder: "Selecionar membro",
                     min_values: 1,
                     max_values: 1,
                   },
@@ -129,11 +127,12 @@ export default async function handler(req, res) {
         });
       }
 
+      // ➖ REMOVER USUÁRIO
       if (customId === "ticket_remove_user") {
         return res.status(200).json({
           type: 4,
           data: {
-            content: "Selecione o membro que deseja **remover** do ticket:",
+            content: "Selecione o membro para remover:",
             flags: 64,
             components: [
               {
@@ -142,7 +141,7 @@ export default async function handler(req, res) {
                   {
                     type: 5,
                     custom_id: "ticket_remove_user_select",
-                    placeholder: "Buscar membro para remover",
+                    placeholder: "Selecionar membro",
                     min_values: 1,
                     max_values: 1,
                   },
@@ -153,6 +152,7 @@ export default async function handler(req, res) {
         });
       }
 
+      // ➕ CONFIRMAR ADD
       if (customId === "ticket_add_user_select") {
         const userId = interaction.data.values[0];
 
@@ -161,12 +161,13 @@ export default async function handler(req, res) {
         return res.status(200).json({
           type: 4,
           data: {
-            content: `✅ Usuário <@${userId}> adicionado ao ticket.`,
+            content: `✅ <@${userId}> adicionado ao ticket.`,
             flags: 64,
           },
         });
       }
 
+      // ➖ CONFIRMAR REMOVE
       if (customId === "ticket_remove_user_select") {
         const userId = interaction.data.values[0];
 
@@ -175,7 +176,7 @@ export default async function handler(req, res) {
         return res.status(200).json({
           type: 4,
           data: {
-            content: `❌ Usuário <@${userId}> removido do ticket.`,
+            content: `❌ <@${userId}> removido do ticket.`,
             flags: 64,
           },
         });
@@ -195,7 +196,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       type: 4,
       data: {
-        content: "❌ Erro interno ao processar interação.",
+        content: "❌ Erro interno.",
         flags: 64,
       },
     });

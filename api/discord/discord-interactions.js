@@ -27,87 +27,179 @@ function validateDiscordRequest(req, rawBody) {
   );
 }
 
-async function setUserPermission(channelId, userId) {
-  return fetch(
-    `https://discord.com/api/v10/channels/${channelId}/permissions/${userId}`,
-    {
-      method: "PUT",
-      headers: {
-        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        type: 1,
-        allow: String(1024 | 2048 | 65536),
-        deny: "0",
-      }),
-    }
+async function discordFetch(url, options = {}) {
+  return fetch(`https://discord.com/api/v10${url}`, {
+    ...options,
+    headers: {
+      Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+      ...(options.headers || {}),
+    },
+  });
+}
+
+// 🔥 BUSCAR TODAS MENSAGENS
+async function getAllMessages(channelId) {
+  let messages = [];
+  let before;
+
+  while (true) {
+    const url = before
+      ? `/channels/${channelId}/messages?limit=100&before=${before}`
+      : `/channels/${channelId}/messages?limit=100`;
+
+    const res = await discordFetch(url);
+    const data = await res.json();
+
+    if (!res.ok || !data.length) break;
+
+    messages.push(...data);
+    before = data[data.length - 1].id;
+
+    if (data.length < 100) break;
+  }
+
+  return messages.reverse();
+}
+
+// 🔥 GERAR HTML
+function escapeHtml(text = "") {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+async function sendTranscript(channelName, channelId, closedBy) {
+  const backupChannelId = process.env.DISCORD_TRANSCRIPT_CHANNEL_ID;
+
+  const messages = await getAllMessages(channelId);
+
+  const htmlMessages = messages
+    .map((msg) => {
+      const name = msg.author.global_name || msg.author.username;
+      const avatar = msg.author.avatar
+        ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`
+        : "https://cdn.discordapp.com/embed/avatars/0.png";
+
+      const content = escapeHtml(msg.content || "").replaceAll("\n", "<br>");
+
+      return `
+      <div class="msg">
+        <img src="${avatar}" class="avatar"/>
+        <div>
+          <b>${name}</b>
+          <div>${content || "<i>vazio</i>"}</div>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  const html = `
+  <html>
+  <head>
+    <style>
+      body { background:#2b2d31;color:#fff;font-family:sans-serif;padding:20px }
+      .msg { display:flex; gap:10px; margin-bottom:10px }
+      .avatar { width:40px;height:40px;border-radius:50% }
+    </style>
+  </head>
+  <body>
+    <h2>Transcript do Ticket</h2>
+    <p>Canal: ${channelName}</p>
+    <p>Fechado por: ${closedBy}</p>
+    <hr/>
+    ${htmlMessages}
+  </body>
+  </html>
+  `;
+
+  const form = new FormData();
+
+  form.append(
+    "payload_json",
+    JSON.stringify({
+      content: `📄 Transcript do ticket <#${channelId}>`,
+    })
   );
+
+  form.append(
+    "files[0]",
+    new Blob([html], { type: "text/html" }),
+    `transcript-${channelId}.html`
+  );
+
+  await discordFetch(`/channels/${backupChannelId}/messages`, {
+    method: "POST",
+    body: form,
+  });
+}
+
+// 🔥 PERMISSÕES
+async function setUserPermission(channelId, userId) {
+  return discordFetch(`/channels/${channelId}/permissions/${userId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type: 1,
+      allow: String(1024 | 2048 | 65536),
+    }),
+  });
 }
 
 async function removeUserPermission(channelId, userId) {
-  return fetch(
-    `https://discord.com/api/v10/channels/${channelId}/permissions/${userId}`,
-    {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-      },
-    }
-  );
+  return discordFetch(`/channels/${channelId}/permissions/${userId}`, {
+    method: "DELETE",
+  });
 }
 
+// 🔥 HANDLER
 export default async function handler(req, res) {
   try {
-    if (req.method !== "POST") {
-      return res.status(405).end();
-    }
+    if (req.method !== "POST") return res.status(405).end();
 
     const rawBody = await getRawBody(req);
 
     if (!validateDiscordRequest(req, rawBody)) {
-      console.error("Assinatura inválida ou ENV faltando");
       return res.status(401).end("invalid request signature");
     }
 
     const interaction = JSON.parse(rawBody.toString());
 
     if (interaction.type === 1) {
-      return res.status(200).json({ type: 1 });
+      return res.json({ type: 1 });
     }
 
     if (interaction.type === 3) {
-      const customId = interaction.data.custom_id;
+      const id = interaction.data.custom_id;
       const channelId = interaction.channel_id;
+      const userId = interaction.member.user.id;
 
-      // 🔒 FECHAR TICKET (CORRIGIDO)
-      if (customId === "ticket_close") {
-        try {
-          await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-            },
-          });
-        } catch (e) {
-          console.error("Erro ao deletar canal:", e);
-        }
+      // 🔒 FECHAR + TRANSCRIPT
+      if (id === "ticket_close") {
+        await sendTranscript(
+          interaction.channel?.name || "ticket",
+          channelId,
+          userId
+        );
 
-        return res.status(200).json({
+        await discordFetch(`/channels/${channelId}`, {
+          method: "DELETE",
+        });
+
+        return res.json({
           type: 4,
           data: {
-            content: "🔒 Ticket fechado.",
+            content: "🔒 Ticket fechado e salvo.",
             flags: 64,
           },
         });
       }
 
-      // ➕ ADICIONAR USUÁRIO
-      if (customId === "ticket_add_user") {
-        return res.status(200).json({
+      if (id === "ticket_add_user") {
+        return res.json({
           type: 4,
           data: {
-            content: "Selecione o membro para adicionar:",
+            content: "Selecionar usuário:",
             flags: 64,
             components: [
               {
@@ -115,10 +207,7 @@ export default async function handler(req, res) {
                 components: [
                   {
                     type: 5,
-                    custom_id: "ticket_add_user_select",
-                    placeholder: "Selecionar membro",
-                    min_values: 1,
-                    max_values: 1,
+                    custom_id: "add_select",
                   },
                 ],
               },
@@ -127,12 +216,11 @@ export default async function handler(req, res) {
         });
       }
 
-      // ➖ REMOVER USUÁRIO
-      if (customId === "ticket_remove_user") {
-        return res.status(200).json({
+      if (id === "ticket_remove_user") {
+        return res.json({
           type: 4,
           data: {
-            content: "Selecione o membro para remover:",
+            content: "Remover usuário:",
             flags: 64,
             components: [
               {
@@ -140,10 +228,7 @@ export default async function handler(req, res) {
                 components: [
                   {
                     type: 5,
-                    custom_id: "ticket_remove_user_select",
-                    placeholder: "Selecionar membro",
-                    min_values: 1,
-                    max_values: 1,
+                    custom_id: "remove_select",
                   },
                 ],
               },
@@ -152,53 +237,33 @@ export default async function handler(req, res) {
         });
       }
 
-      // ➕ CONFIRMAR ADD
-      if (customId === "ticket_add_user_select") {
-        const userId = interaction.data.values[0];
+      if (id === "add_select") {
+        const u = interaction.data.values[0];
+        await setUserPermission(channelId, u);
 
-        await setUserPermission(channelId, userId);
-
-        return res.status(200).json({
+        return res.json({
           type: 4,
-          data: {
-            content: `✅ <@${userId}> adicionado ao ticket.`,
-            flags: 64,
-          },
+          data: { content: `Adicionado <@${u}>`, flags: 64 },
         });
       }
 
-      // ➖ CONFIRMAR REMOVE
-      if (customId === "ticket_remove_user_select") {
-        const userId = interaction.data.values[0];
+      if (id === "remove_select") {
+        const u = interaction.data.values[0];
+        await removeUserPermission(channelId, u);
 
-        await removeUserPermission(channelId, userId);
-
-        return res.status(200).json({
+        return res.json({
           type: 4,
-          data: {
-            content: `❌ <@${userId}> removido do ticket.`,
-            flags: 64,
-          },
+          data: { content: `Removido <@${u}>`, flags: 64 },
         });
       }
     }
 
-    return res.status(200).json({
-      type: 4,
-      data: {
-        content: "Interação não reconhecida.",
-        flags: 64,
-      },
-    });
+    return res.json({ type: 4, data: { content: "OK", flags: 64 } });
   } catch (err) {
-    console.error("ERRO DISCORD:", err);
-
-    return res.status(200).json({
+    console.error(err);
+    return res.json({
       type: 4,
-      data: {
-        content: "❌ Erro interno.",
-        flags: 64,
-      },
+      data: { content: "Erro", flags: 64 },
     });
   }
 }

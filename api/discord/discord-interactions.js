@@ -8,13 +8,16 @@ export const config = {
 
 async function getRawBody(req) {
   const chunks = [];
-  for await (const chunk of req) {
-    chunks.push(chunk);
-  }
+  for await (const chunk of req) chunks.push(chunk);
   return Buffer.concat(chunks);
 }
 
 export default async function handler(req, res) {
+  console.log("CHEGOU NO DISCORD INTERACTIONS", new Date().toISOString());
+  console.log("METHOD:", req.method);
+  console.log("PUBLIC KEY EXISTE:", !!process.env.DISCORD_PUBLIC_KEY);
+  console.log("BOT TOKEN EXISTE:", !!process.env.DISCORD_BOT_TOKEN);
+
   try {
     if (req.method !== "POST") {
       return res.status(405).end();
@@ -25,19 +28,22 @@ export default async function handler(req, res) {
     const signature = req.headers["x-signature-ed25519"];
     const timestamp = req.headers["x-signature-timestamp"];
 
+    console.log("SIGNATURE EXISTE:", !!signature);
+    console.log("TIMESTAMP EXISTE:", !!timestamp);
+    console.log("RAW BODY:", rawBody.toString());
+
     if (!signature || !timestamp || !process.env.DISCORD_PUBLIC_KEY) {
       console.error("Faltando assinatura, timestamp ou PUBLIC KEY");
       return res.status(401).end("missing signature");
     }
 
     const isValid = nacl.sign.detached.verify(
-      Buffer.concat([
-        Buffer.from(timestamp),
-        rawBody,
-      ]),
+      Buffer.concat([Buffer.from(timestamp), rawBody]),
       Buffer.from(signature, "hex"),
       Buffer.from(process.env.DISCORD_PUBLIC_KEY, "hex")
     );
+
+    console.log("ASSINATURA VALIDA:", isValid);
 
     if (!isValid) {
       console.error("Assinatura inválida");
@@ -46,17 +52,17 @@ export default async function handler(req, res) {
 
     const interaction = JSON.parse(rawBody.toString());
 
-    // 🔁 PING (obrigatório)
+    console.log("INTERACTION TYPE:", interaction.type);
+    console.log("CUSTOM ID:", interaction.data?.custom_id);
+
     if (interaction.type === 1) {
       return res.status(200).json({ type: 1 });
     }
 
-    // 🔘 BOTÕES
     if (interaction.type === 3) {
       const customId = interaction.data.custom_id;
       const channelId = interaction.channel_id;
 
-      // 🔒 FECHAR TICKET
       if (customId === "ticket_close") {
         res.status(200).json({
           type: 4,
@@ -82,7 +88,6 @@ export default async function handler(req, res) {
         return;
       }
 
-      // ➕ ADD USER
       if (customId === "ticket_add_user") {
         return res.status(200).json({
           type: 9,
@@ -107,7 +112,6 @@ export default async function handler(req, res) {
         });
       }
 
-      // ➖ REMOVE USER
       if (customId === "ticket_remove_user") {
         return res.status(200).json({
           type: 9,
@@ -133,14 +137,11 @@ export default async function handler(req, res) {
       }
     }
 
-    // 📩 MODAIS
     if (interaction.type === 5) {
       const modalId = interaction.data.custom_id;
       const channelId = interaction.channel_id;
-      const userId =
-        interaction.data.components[0].components[0].value;
+      const userId = interaction.data.components[0].components[0].value;
 
-      // ➕ ADICIONAR
       if (modalId === "modal_add_user") {
         await fetch(
           `https://discord.com/api/v10/channels/${channelId}/permissions/${userId}`,
@@ -166,7 +167,6 @@ export default async function handler(req, res) {
         });
       }
 
-      // ➖ REMOVER
       if (modalId === "modal_remove_user") {
         await fetch(
           `https://discord.com/api/v10/channels/${channelId}/permissions/${userId}`,

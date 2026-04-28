@@ -13,6 +13,8 @@ import {
   X,
   Save,
   Upload,
+  Search,
+  SlidersHorizontal,
 } from "lucide-react";
 
 type Category = {
@@ -31,7 +33,7 @@ type Product = {
   category_id?: string | null;
   category_name?: string | null;
   image_url?: string | null;
-  active?: boolean;
+  active?: boolean | number;
   sort_order?: number;
   description?: string | null;
 };
@@ -69,9 +71,21 @@ const getImageUrl = (imageUrl?: string | null) => {
     return imageUrl;
   }
 
-  const base = API_URL.replace(/\/api$/, ""); // remove o /api do final
+  const base = API_URL.replace(/\/api$/, "");
 
   return `${base}${imageUrl}`;
+};
+
+const normalizeText = (value?: string | null) => {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+};
+
+const isProductActive = (active?: boolean | number) => {
+  return active === true || active === 1;
 };
 
 const AdminProducts = () => {
@@ -84,6 +98,13 @@ const AdminProducts = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>("");
 
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterCategory, setFilterCategory] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [sortBy, setSortBy] = useState("default");
+
   const getToken = () => {
     return (
       localStorage.getItem("token") ||
@@ -94,43 +115,43 @@ const AdminProducts = () => {
   };
 
   const authFetch = async (url: string, options: RequestInit = {}) => {
-  const token = getToken();
+    const token = getToken();
 
-  const headers = new Headers(options.headers || {});
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
+    const headers = new Headers(options.headers || {});
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
 
-  const rawText = await response.text();
-  let data: any = null;
+    const rawText = await response.text();
+    let data: any = null;
 
-  try {
-    data = rawText ? JSON.parse(rawText) : null;
-  } catch {
-    data = rawText;
-  }
+    try {
+      data = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      data = rawText;
+    }
 
-  console.log("STATUS:", response.status);
-  console.log("RESPOSTA BRUTA:", rawText);
-  console.log("RESPOSTA PARSEADA:", data);
+    console.log("STATUS:", response.status);
+    console.log("RESPOSTA BRUTA:", rawText);
+    console.log("RESPOSTA PARSEADA:", data);
 
-  if (!response.ok) {
-    throw new Error(
-      data?.sqlMessage ||
-      data?.error ||
-      data?.message ||
-      rawText ||
-      "Erro na requisição."
-    );
-  }
+    if (!response.ok) {
+      throw new Error(
+        data?.sqlMessage ||
+          data?.error ||
+          data?.message ||
+          rawText ||
+          "Erro na requisição."
+      );
+    }
 
-  return data;
-};
+    return data;
+  };
 
   const { data: products = [], isLoading: loadingProducts } = useQuery({
     queryKey: ["admin-products"],
@@ -146,6 +167,63 @@ const AdminProducts = () => {
     return new Map(categories.map((c) => [String(c.id), c.name]));
   }, [categories]);
 
+  const filteredProducts = useMemo(() => {
+    const term = normalizeText(searchTerm);
+
+    let result = [...products];
+
+    if (term) {
+      result = result.filter((product) => {
+        const categoryName =
+          categoryMap.get(String(product.category_id || "")) ||
+          product.category_name ||
+          "";
+
+        const searchableText = normalizeText(
+          `${product.name} ${product.tag || ""} ${product.description || ""} ${categoryName}`
+        );
+
+        return searchableText.includes(term);
+      });
+    }
+
+    if (filterCategory !== "all") {
+      result = result.filter(
+        (product) => String(product.category_id || "") === filterCategory
+      );
+    }
+
+    if (filterStatus === "active") {
+      result = result.filter((product) => isProductActive(product.active));
+    }
+
+    if (filterStatus === "inactive") {
+      result = result.filter((product) => !isProductActive(product.active));
+    }
+
+    if (minPrice !== "") {
+      result = result.filter((product) => Number(product.price || 0) >= Number(minPrice));
+    }
+
+    if (maxPrice !== "") {
+      result = result.filter((product) => Number(product.price || 0) <= Number(maxPrice));
+    }
+
+    if (sortBy === "price-asc") {
+      result.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+    } else if (sortBy === "price-desc") {
+      result.sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
+    } else if (sortBy === "discount") {
+      result.sort((a, b) => Number(b.discount || 0) - Number(a.discount || 0));
+    } else if (sortBy === "name") {
+      result.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "pt-BR"));
+    } else if (sortBy === "order") {
+      result.sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+    }
+
+    return result;
+  }, [products, searchTerm, filterCategory, filterStatus, minPrice, maxPrice, sortBy, categoryMap]);
+
   const formatPrice = (value?: number | null) => {
     if (value === null || value === undefined || Number.isNaN(value)) {
       return "R$ 0,00";
@@ -155,6 +233,15 @@ const AdminProducts = () => {
       style: "currency",
       currency: "BRL",
     });
+  };
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setFilterCategory("all");
+    setFilterStatus("all");
+    setMinPrice("");
+    setMaxPrice("");
+    setSortBy("default");
   };
 
   const resetForm = () => {
@@ -183,7 +270,7 @@ const AdminProducts = () => {
       discount: product.discount != null ? String(product.discount) : "",
       tag: product.tag ?? "",
       category_id: product.category_id != null ? String(product.category_id) : "",
-      active: product.active ?? true,
+      active: isProductActive(product.active),
       sort_order: product.sort_order ?? 0,
       description: product.description ?? "",
       existingImageUrl: product.image_url ?? "",
@@ -234,7 +321,6 @@ const AdminProducts = () => {
       body.append("sort_order", String(Number(form.sort_order) || 0));
       body.append("description", form.description.trim());
 
-      // ajuda o backend a saber se deve manter a imagem atual ao editar
       body.append("keep_image", selectedFile ? "false" : "true");
 
       if (selectedFile) {
@@ -532,9 +618,128 @@ const AdminProducts = () => {
       )}
 
       <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-bold text-white">
+              <SlidersHorizontal className="h-5 w-5 text-red-400" />
+              Filtros
+            </h3>
+            <p className="mt-1 text-sm text-zinc-400">
+              Localize produtos por nome, categoria, status, preço ou ordem.
+            </p>
+          </div>
+
+          <button
+            onClick={clearFilters}
+            className="rounded-xl border border-white/10 bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-700"
+          >
+            Limpar filtros
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div className="xl:col-span-2">
+            <label className="mb-2 block text-sm font-medium text-zinc-300">
+              Buscar produto
+            </label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Nome, tag, descrição ou categoria"
+                className="w-full rounded-xl border border-white/10 bg-zinc-950 py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-red-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-zinc-300">
+              Categoria
+            </label>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500"
+            >
+              <option value="all">Todas</option>
+              {categories.map((category) => (
+                <option key={category.id} value={String(category.id)}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-zinc-300">
+              Status
+            </label>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500"
+            >
+              <option value="all">Todos</option>
+              <option value="active">Ativos</option>
+              <option value="inactive">Inativos</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-zinc-300">
+              Preço mínimo
+            </label>
+            <input
+              type="number"
+              min="0"
+              value={minPrice}
+              onChange={(e) => setMinPrice(e.target.value)}
+              placeholder="Ex: 50"
+              className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-red-500"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-zinc-300">
+              Preço máximo
+            </label>
+            <input
+              type="number"
+              min="0"
+              value={maxPrice}
+              onChange={(e) => setMaxPrice(e.target.value)}
+              placeholder="Ex: 500"
+              className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-red-500"
+            />
+          </div>
+
+          <div className="md:col-span-2 xl:col-span-2">
+            <label className="mb-2 block text-sm font-medium text-zinc-300">
+              Ordenar por
+            </label>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500"
+            >
+              <option value="default">Padrão</option>
+              <option value="order">Ordem</option>
+              <option value="price-asc">Menor preço</option>
+              <option value="price-desc">Maior preço</option>
+              <option value="discount">Maior desconto</option>
+              <option value="name">Nome A-Z</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-lg font-bold text-white">Lista de produtos</h3>
-          <span className="text-sm text-zinc-400">{products.length} produto(s)</span>
+          <span className="text-sm text-zinc-400">
+            {filteredProducts.length} de {products.length} produto(s)
+          </span>
         </div>
 
         {loadingProducts || loadingCategories ? (
@@ -546,9 +751,16 @@ const AdminProducts = () => {
             <Package className="mx-auto mb-3 h-10 w-10 text-zinc-600" />
             <p className="text-sm text-zinc-400">Nenhum produto cadastrado.</p>
           </div>
+        ) : filteredProducts.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-white/10 bg-zinc-950 p-8 text-center">
+            <Search className="mx-auto mb-3 h-10 w-10 text-zinc-600" />
+            <p className="text-sm text-zinc-400">
+              Nenhum produto encontrado com os filtros selecionados.
+            </p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {products.map((product) => (
+            {filteredProducts.map((product) => (
               <div
                 key={product.id}
                 className="group rounded-2xl border border-white/10 bg-zinc-950 p-4 transition hover:border-red-500/40"
@@ -582,7 +794,7 @@ const AdminProducts = () => {
                               "Sem categoria"}
                           </span>
 
-                          {!product.active && (
+                          {!isProductActive(product.active) && (
                             <span className="rounded-full bg-zinc-800 px-2 py-1 text-[11px] text-zinc-300">
                               Inativo
                             </span>

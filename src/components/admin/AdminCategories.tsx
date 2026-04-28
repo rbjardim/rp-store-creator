@@ -1,8 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, API_URL } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
-import { Pencil, Trash2, Plus, FolderOpen } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  Pencil,
+  Trash2,
+  Plus,
+  FolderOpen,
+  Search,
+  X,
+  ArrowUpDown,
+} from "lucide-react";
 
 const AdminCategories = () => {
   const queryClient = useQueryClient();
@@ -14,12 +22,52 @@ const AdminCategories = () => {
   const [sortOrder, setSortOrder] = useState(0);
   const [showForm, setShowForm] = useState(false);
 
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("order-asc");
+
   const { data: categories = [], isLoading } = useQuery({
     queryKey: ["admin-categories"],
     queryFn: async () => {
       return apiFetch<any[]>("/categories");
     },
   });
+
+  const filteredCategories = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+
+    let result = [...categories];
+
+    if (term) {
+      result = result.filter((cat) => {
+        const catName = String(cat.name ?? "").toLowerCase();
+        const catSlug = String(cat.slug ?? "").toLowerCase();
+        const catOrder = String(cat.sort_order ?? "").toLowerCase();
+
+        return (
+          catName.includes(term) ||
+          catSlug.includes(term) ||
+          catOrder.includes(term)
+        );
+      });
+    }
+
+    if (sortBy === "order-asc") {
+      result.sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
+    } else if (sortBy === "order-desc") {
+      result.sort((a, b) => Number(b.sort_order ?? 0) - Number(a.sort_order ?? 0));
+    } else if (sortBy === "name-asc") {
+      result.sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), "pt-BR"));
+    } else if (sortBy === "name-desc") {
+      result.sort((a, b) => String(b.name ?? "").localeCompare(String(a.name ?? ""), "pt-BR"));
+    }
+
+    return result;
+  }, [categories, searchTerm, sortBy]);
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setSortBy("order-asc");
+  };
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -202,15 +250,93 @@ const AdminCategories = () => {
         </div>
       )}
 
+      {/* FILTROS */}
+      <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-5 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-bold text-white">
+              <Search className="h-5 w-5 text-red-400" />
+              Localizar categoria
+            </h3>
+            <p className="text-sm text-zinc-400">
+              Pesquise por nome, slug ou ordem da categoria.
+            </p>
+          </div>
+
+          <span className="text-sm text-zinc-400">
+            {filteredCategories.length} de {categories.length} categoria(s)
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="md:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-zinc-400">
+              Buscar
+            </label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Digite o nome, slug ou ordem..."
+                className="w-full rounded-xl border border-white/10 bg-zinc-950 py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-red-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-400">
+              Ordenar por
+            </label>
+            <div className="relative">
+              <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-zinc-950 py-3 pl-10 pr-4 text-sm text-white outline-none transition focus:border-red-500"
+              >
+                <option value="order-asc">Ordem crescente</option>
+                <option value="order-desc">Ordem decrescente</option>
+                <option value="name-asc">Nome A-Z</option>
+                <option value="name-desc">Nome Z-A</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-transparent">
+              Limpar
+            </label>
+            <button
+              onClick={clearFilters}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-zinc-800 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-zinc-700 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+              Limpar filtros
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* LISTA */}
       {isLoading ? (
-        <p>Carregando...</p>
+        <div className="rounded-xl border border-white/10 bg-zinc-950 p-6 text-sm text-zinc-400">
+          Carregando categorias...
+        </div>
+      ) : filteredCategories.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-white/10 bg-zinc-950 p-8 text-center">
+          <FolderOpen className="mx-auto mb-3 h-10 w-10 text-zinc-600" />
+          <p className="text-sm text-zinc-400">
+            Nenhuma categoria encontrada com os filtros selecionados.
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
-          {categories.map((cat) => (
+          {filteredCategories.map((cat) => (
             <div
               key={cat.id}
-              className="flex items-center justify-between rounded-lg border border-border bg-card p-4"
+              className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 md:flex-row md:items-center md:justify-between"
             >
               <div className="flex flex-col">
                 <span className="font-medium text-foreground">{cat.name}</span>

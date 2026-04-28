@@ -1,8 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { API_URL, apiFetch } from "@/lib/api";
+import { API_URL } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Save, TicketPercent, Trash2, Pencil, X } from "lucide-react";
-import { useState } from "react";
+import {
+  Plus,
+  Save,
+  TicketPercent,
+  Trash2,
+  Pencil,
+  X,
+  Search,
+  ArrowUpDown,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 
 type Coupon = {
   id: string;
@@ -31,6 +40,9 @@ const AdminCoupons = () => {
   const [editId, setEditId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<CouponForm>(emptyForm);
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("created-desc");
 
   const getToken = () =>
     localStorage.getItem("token") ||
@@ -70,6 +82,65 @@ const AdminCoupons = () => {
     queryKey: ["admin-coupons"],
     queryFn: () => authFetch(`${API_URL}/coupons`),
   });
+
+  const filteredCoupons = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+
+    let result = [...coupons];
+
+    if (term) {
+      result = result.filter((coupon: Coupon) => {
+        const code = String(coupon.code ?? "").toLowerCase();
+        const percent = String(coupon.discount_percent ?? "").toLowerCase();
+        const status = coupon.active ? "ativo" : "inativo";
+
+        return (
+          code.includes(term) ||
+          percent.includes(term) ||
+          status.includes(term)
+        );
+      });
+    }
+
+    if (sortBy === "created-desc") {
+      result.sort(
+        (a: Coupon, b: Coupon) =>
+          new Date(b.created_at || "").getTime() -
+          new Date(a.created_at || "").getTime()
+      );
+    } else if (sortBy === "created-asc") {
+      result.sort(
+        (a: Coupon, b: Coupon) =>
+          new Date(a.created_at || "").getTime() -
+          new Date(b.created_at || "").getTime()
+      );
+    } else if (sortBy === "discount-desc") {
+      result.sort(
+        (a: Coupon, b: Coupon) =>
+          Number(b.discount_percent ?? 0) - Number(a.discount_percent ?? 0)
+      );
+    } else if (sortBy === "discount-asc") {
+      result.sort(
+        (a: Coupon, b: Coupon) =>
+          Number(a.discount_percent ?? 0) - Number(b.discount_percent ?? 0)
+      );
+    } else if (sortBy === "code-asc") {
+      result.sort((a: Coupon, b: Coupon) =>
+        String(a.code ?? "").localeCompare(String(b.code ?? ""), "pt-BR")
+      );
+    } else if (sortBy === "code-desc") {
+      result.sort((a: Coupon, b: Coupon) =>
+        String(b.code ?? "").localeCompare(String(a.code ?? ""), "pt-BR")
+      );
+    }
+
+    return result;
+  }, [coupons, searchTerm, sortBy]);
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setSortBy("created-desc");
+  };
 
   const resetForm = () => {
     setEditId(null);
@@ -124,7 +195,9 @@ const AdminCoupons = () => {
       queryClient.invalidateQueries({ queryKey: ["admin-coupons"] });
       toast({
         title: "Sucesso",
-        description: editId ? "Cupom atualizado com sucesso." : "Cupom criado com sucesso.",
+        description: editId
+          ? "Cupom atualizado com sucesso."
+          : "Cupom criado com sucesso.",
       });
       resetForm();
     },
@@ -211,7 +284,9 @@ const AdminCoupons = () => {
               </label>
               <input
                 value={form.code}
-                onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                onChange={(e) =>
+                  setForm({ ...form, code: e.target.value.toUpperCase() })
+                }
                 placeholder="Ex: BEMVINDO10"
                 className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500"
               />
@@ -224,7 +299,9 @@ const AdminCoupons = () => {
               <input
                 type="number"
                 value={form.discount_percent}
-                onChange={(e) => setForm({ ...form, discount_percent: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, discount_percent: e.target.value })
+                }
                 placeholder="Ex: 10"
                 className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500"
               />
@@ -235,7 +312,9 @@ const AdminCoupons = () => {
                 <input
                   type="checkbox"
                   checked={form.active}
-                  onChange={(e) => setForm({ ...form, active: e.target.checked })}
+                  onChange={(e) =>
+                    setForm({ ...form, active: e.target.checked })
+                  }
                   className="h-4 w-4 rounded border-white/10 bg-zinc-950 text-red-600"
                 />
                 Cupom ativo
@@ -267,31 +346,107 @@ const AdminCoupons = () => {
         </div>
       )}
 
+      <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-5 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-bold text-white">
+              <Search className="h-5 w-5 text-red-400" />
+              Localizar cupom
+            </h3>
+            <p className="text-sm text-zinc-400">
+              Pesquise por código, desconto ou status.
+            </p>
+          </div>
+
+          <span className="text-sm text-zinc-400">
+            {filteredCoupons.length} de {coupons.length} cupom(ns)
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="md:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-zinc-400">
+              Buscar
+            </label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Digite código, desconto, ativo ou inativo..."
+                className="w-full rounded-xl border border-white/10 bg-zinc-950 py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-red-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-400">
+              Ordenar por
+            </label>
+            <div className="relative">
+              <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-zinc-950 py-3 pl-10 pr-4 text-sm text-white outline-none transition focus:border-red-500"
+              >
+                <option value="created-desc">Mais recentes</option>
+                <option value="created-asc">Mais antigos</option>
+                <option value="discount-desc">Maior desconto</option>
+                <option value="discount-asc">Menor desconto</option>
+                <option value="code-asc">Código A-Z</option>
+                <option value="code-desc">Código Z-A</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-transparent">
+              Limpar
+            </label>
+            <button
+              onClick={clearFilters}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-zinc-800 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-zinc-700 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+              Limpar filtros
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-bold text-white">Lista de cupons</h3>
-          <span className="text-sm text-zinc-400">{coupons.length} cupom(ns)</span>
+          <span className="text-sm text-zinc-400">
+            {filteredCoupons.length} de {coupons.length} cupom(ns)
+          </span>
         </div>
 
         {isLoading ? (
           <div className="rounded-xl border border-white/10 bg-zinc-950 p-6 text-sm text-zinc-400">
             Carregando cupons...
           </div>
-        ) : coupons.length === 0 ? (
+        ) : filteredCoupons.length === 0 ? (
           <div className="rounded-xl border border-dashed border-white/10 bg-zinc-950 p-8 text-center">
             <TicketPercent className="mx-auto mb-3 h-10 w-10 text-zinc-600" />
-            <p className="text-sm text-zinc-400">Nenhum cupom cadastrado.</p>
+            <p className="text-sm text-zinc-400">
+              Nenhum cupom encontrado com os filtros selecionados.
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {coupons.map((coupon) => (
+            {filteredCoupons.map((coupon: Coupon) => (
               <div
                 key={coupon.id}
                 className="rounded-2xl border border-white/10 bg-zinc-950 p-4 transition hover:border-red-500/40"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h4 className="text-base font-bold text-white">{coupon.code}</h4>
+                    <h4 className="text-base font-bold text-white">
+                      {coupon.code}
+                    </h4>
                     <div className="mt-2 flex items-center gap-2 text-sm text-zinc-400">
                       <span>{coupon.discount_percent}% OFF</span>
                       <span

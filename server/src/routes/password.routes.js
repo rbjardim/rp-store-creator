@@ -22,10 +22,18 @@ function createEmailTransporter() {
     host: process.env.SMTP_HOST,
     port: smtpPort,
     secure: smtpPort === 465,
+
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
+
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
+
+    logger: true,
+    debug: true,
   });
 }
 
@@ -47,22 +55,37 @@ async function sendResetEmail(email, resetUrl) {
     );
   }
 
+  console.log("Preparando envio de recuperação para:", email);
+  console.log("SMTP_HOST:", process.env.SMTP_HOST);
+  console.log("SMTP_PORT:", process.env.SMTP_PORT);
+  console.log("SMTP_USER:", process.env.SMTP_USER);
+  console.log("SMTP_FROM:", process.env.SMTP_FROM);
+
   const transporter = createEmailTransporter();
 
-  await transporter.sendMail({
+  console.log("Verificando conexão SMTP...");
+
+  await transporter.verify();
+
+  console.log("Conexão SMTP verificada.");
+  console.log("Enviando e-mail...");
+
+  const info = await transporter.sendMail({
     from: process.env.SMTP_FROM,
     to: email,
-    subject: "Redefinição de senha — Painel administrativo",
+    subject: "Redefinição de senha — Campo Limpo RP",
+
     text: [
       "Foi solicitada uma redefinição de senha para sua conta.",
       "",
-      `Acesse o link abaixo para criar uma nova senha:`,
+      "Acesse o link abaixo para criar uma nova senha:",
       resetUrl,
       "",
       "O link é válido por 30 minutos.",
       "",
       "Caso você não tenha solicitado a alteração, ignore este e-mail.",
     ].join("\n"),
+
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
         <h2>Redefinição de senha</h2>
@@ -70,10 +93,6 @@ async function sendResetEmail(email, resetUrl) {
         <p>
           Foi solicitada uma redefinição de senha para sua conta do painel
           administrativo.
-        </p>
-
-        <p>
-          Clique no botão abaixo para criar uma nova senha:
         </p>
 
         <p style="margin: 28px 0;">
@@ -103,6 +122,8 @@ async function sendResetEmail(email, resetUrl) {
       </div>
     `,
   });
+
+  console.log("E-mail enviado com sucesso:", info.messageId);
 }
 
 // Solicitar recuperação de senha

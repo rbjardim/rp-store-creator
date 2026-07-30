@@ -56,108 +56,94 @@ async function sendResetEmail(email, resetUrl) {
 
   const transporter = createEmailTransporter();
 
-  try {
-    console.log("Preparando envio de recuperação para:", email);
-    console.log("SMTP_HOST:", process.env.SMTP_HOST);
-    console.log("SMTP_PORT:", process.env.SMTP_PORT || "587");
-    console.log("SMTP_USER:", process.env.SMTP_USER);
-    console.log("SMTP_FROM:", process.env.SMTP_FROM);
+  const info = await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to: email,
+    subject: "Redefinição de senha — Campo Limpo RP",
 
-    await transporter.verify();
+    text: [
+      "Foi solicitada uma redefinição de senha para sua conta.",
+      "",
+      "Acesse o link abaixo para criar uma nova senha:",
+      resetUrl,
+      "",
+      `O link é válido por ${RESET_TOKEN_DURATION_MINUTES} minutos.`,
+      "",
+      "Caso você não tenha solicitado a alteração, ignore este e-mail.",
+    ].join("\n"),
 
-    console.log("Conexão SMTP verificada.");
-
-    const info = await transporter.sendMail({
-      from: process.env.SMTP_FROM,
-      to: email,
-      subject: "Redefinição de senha — Campo Limpo RP",
-
-      text: [
-        "Foi solicitada uma redefinição de senha para sua conta.",
-        "",
-        "Acesse o link abaixo para criar uma nova senha:",
-        resetUrl,
-        "",
-        `O link é válido por ${RESET_TOKEN_DURATION_MINUTES} minutos.`,
-        "",
-        "Caso você não tenha solicitado a alteração, ignore este e-mail.",
-      ].join("\n"),
-
-      html: `
+    html: `
+      <div
+        style="
+          background-color: #f3f4f6;
+          padding: 32px 16px;
+          font-family: Arial, Helvetica, sans-serif;
+          color: #111827;
+        "
+      >
         <div
           style="
-            background-color: #f3f4f6;
-            padding: 32px 16px;
-            font-family: Arial, Helvetica, sans-serif;
-            color: #111827;
+            max-width: 560px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 32px;
           "
         >
-          <div
-            style="
-              max-width: 560px;
-              margin: 0 auto;
-              background-color: #ffffff;
-              border: 1px solid #e5e7eb;
-              border-radius: 10px;
-              padding: 32px;
-            "
-          >
-            <h2 style="margin-top: 0;">
-              Redefinição de senha
-            </h2>
+          <h2 style="margin-top: 0;">
+            Redefinição de senha
+          </h2>
 
-            <p>
-              Foi solicitada uma redefinição de senha para sua conta do
-              painel administrativo.
-            </p>
+          <p>
+            Foi solicitada uma redefinição de senha para sua conta do
+            painel administrativo.
+          </p>
 
-            <p style="margin: 28px 0;">
-              <a
-                href="${resetUrl}"
-                style="
-                  display: inline-block;
-                  padding: 12px 20px;
-                  background-color: #111827;
-                  color: #ffffff;
-                  text-decoration: none;
-                  border-radius: 6px;
-                  font-weight: bold;
-                "
-              >
-                Redefinir minha senha
-              </a>
-            </p>
-
-            <p>
-              Esse link é válido por
-              <strong>${RESET_TOKEN_DURATION_MINUTES} minutos</strong>.
-            </p>
-
-            <p style="font-size: 13px; color: #6b7280;">
-              Caso você não tenha solicitado a alteração, ignore este
-              e-mail. Sua senha atual continuará funcionando.
-            </p>
-
-            <hr
+          <p style="margin: 28px 0;">
+            <a
+              href="${resetUrl}"
               style="
-                border: 0;
-                border-top: 1px solid #e5e7eb;
-                margin: 24px 0;
+                display: inline-block;
+                padding: 12px 20px;
+                background-color: #111827;
+                color: #ffffff;
+                text-decoration: none;
+                border-radius: 6px;
+                font-weight: bold;
               "
-            />
+            >
+              Redefinir minha senha
+            </a>
+          </p>
 
-            <p style="font-size: 12px; color: #9ca3af;">
-              Campo Limpo RP
-            </p>
-          </div>
+          <p>
+            Este link é válido por
+            <strong>${RESET_TOKEN_DURATION_MINUTES} minutos</strong>.
+          </p>
+
+          <p style="font-size: 13px; color: #6b7280;">
+            Caso você não tenha solicitado essa alteração, ignore este
+            e-mail. Sua senha atual continuará funcionando.
+          </p>
+
+          <hr
+            style="
+              border: 0;
+              border-top: 1px solid #e5e7eb;
+              margin: 24px 0;
+            "
+          />
+
+          <p style="font-size: 12px; color: #9ca3af;">
+            Campo Limpo RP
+          </p>
         </div>
-      `,
-    });
+      </div>
+    `,
+  });
 
-    console.log("E-mail enviado com sucesso:", info.messageId);
-  } finally {
-    transporter.close();
-  }
+  return info;
 }
 
 /*
@@ -275,14 +261,7 @@ router.post("/forgot-password", async (req, res) => {
       }
     }
 
-    console.error("========= FORGOT PASSWORD =========");
-    console.error("message:", error.message);
-    console.error("code:", error.code);
-    console.error("errno:", error.errno);
-    console.error("sqlState:", error.sqlState);
-    console.error("sqlMessage:", error.sqlMessage);
-    console.error("stack:", error.stack);
-    console.error("===================================");
+    console.error("Erro no forgot-password:", error);
 
     return res.status(500).json({
       message: "Não foi possível enviar o e-mail de recuperação.",
@@ -412,12 +391,6 @@ router.post("/reset-password", async (req, res) => {
 
     await connection.commit();
     transactionStarted = false;
-
-    console.log(
-      "Senha redefinida com sucesso para o usuário:",
-      resetToken.user_id
-    );
-
     return res.status(200).json({
       message: "Senha redefinida com sucesso.",
     });
@@ -433,14 +406,7 @@ router.post("/reset-password", async (req, res) => {
       }
     }
 
-    console.error("========= RESET PASSWORD =========");
-    console.error("message:", error.message);
-    console.error("code:", error.code);
-    console.error("errno:", error.errno);
-    console.error("sqlState:", error.sqlState);
-    console.error("sqlMessage:", error.sqlMessage);
-    console.error("stack:", error.stack);
-    console.error("==================================");
+    console.error("Erro no reset-password:", error);
 
     return res.status(500).json({
       message: "Não foi possível redefinir a senha.",
@@ -448,7 +414,6 @@ router.post("/reset-password", async (req, res) => {
        * Durante o teste, você pode manter esta propriedade.
        * Depois que funcionar, remova o campo debug.
        */
-      debug: error.message,
     });
   } finally {
     if (connection) {

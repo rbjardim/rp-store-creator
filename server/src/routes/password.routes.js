@@ -50,9 +50,11 @@ function validateSmtpVariables() {
   });
 
   if (missingVariables.length > 0) {
-    throw new Error(
+    const error = new Error(
       `Variáveis SMTP ausentes: ${missingVariables.join(", ")}`
     );
+    error.stage = "SMTP_ENV_MISSING";
+    throw error;
   }
 }
 
@@ -80,9 +82,9 @@ function createEmailTransporter() {
       minVersion: "TLSv1.2",
     },
 
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 30000,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 15000,
 
     logger: true,
     debug: true,
@@ -93,6 +95,7 @@ function logError(title, error) {
   console.error("========================================");
   console.error(title);
   console.error("DATA:", new Date().toISOString());
+  console.error("STAGE:", error?.stage || "N/A");
   console.error("MENSAGEM:", error?.message);
   console.error("CÓDIGO:", error?.code);
   console.error("COMANDO:", error?.command);
@@ -104,8 +107,30 @@ function logError(title, error) {
   console.error("========================================");
 }
 
+/*
+ * Monta a resposta de debug de forma consistente.
+ * Sempre inclui "stage" para sabermos em qual etapa o processo falhou:
+ * DB_LOOKUP, SMTP_ENV_MISSING, SMTP_VERIFY, SMTP_SEND, DB_TRANSACTION.
+ */
+function buildDebugPayload(error) {
+  return {
+    stage: error?.stage || "UNKNOWN",
+    error: error?.message,
+    code: error?.code,
+    command: error?.command,
+    response: error?.response,
+    responseCode: error?.responseCode,
+    sqlMessage: error?.sqlMessage,
+  };
+}
+
 async function sendResetEmail(email, resetUrl) {
-  validateSmtpVariables();
+  try {
+    validateSmtpVariables();
+  } catch (error) {
+    error.stage = error.stage || "SMTP_ENV_MISSING";
+    throw error;
+  }
 
   const smtp = getSmtpConfiguration();
 
@@ -125,238 +150,248 @@ async function sendResetEmail(email, resetUrl) {
   try {
     console.log("Verificando conexão SMTP por IPv4...");
 
-    await transporter.verify();
+    try {
+      await transporter.verify();
+    } catch (verifyError) {
+      verifyError.stage = "SMTP_VERIFY";
+      throw verifyError;
+    }
 
     console.log("Conexão SMTP verificada com sucesso.");
     console.log("Enviando e-mail de recuperação...");
 
-    const info = await transporter.sendMail({
-      from: smtp.from,
-      to: email,
-      subject: "Redefinição de senha — Campo Limpo RP",
+    let info;
+    try {
+      info = await transporter.sendMail({
+        from: smtp.from,
+        to: email,
+        subject: "Redefinição de senha — Campo Limpo RP",
 
-      text: [
-        "Foi solicitada uma redefinição de senha para sua conta.",
-        "",
-        "Acesse o link abaixo para criar uma nova senha:",
-        resetUrl,
-        "",
-        `O link é válido por ${RESET_TOKEN_DURATION_MINUTES} minutos.`,
-        "",
-        "Caso você não tenha solicitado a alteração, ignore este e-mail.",
-      ].join("\n"),
+        text: [
+          "Foi solicitada uma redefinição de senha para sua conta.",
+          "",
+          "Acesse o link abaixo para criar uma nova senha:",
+          resetUrl,
+          "",
+          `O link é válido por ${RESET_TOKEN_DURATION_MINUTES} minutos.`,
+          "",
+          "Caso você não tenha solicitado a alteração, ignore este e-mail.",
+        ].join("\n"),
 
-      html: `
-        <!DOCTYPE html>
-        <html lang="pt-BR">
-          <head>
-            <meta charset="UTF-8" />
-
-            <meta
-              name="viewport"
-              content="width=device-width, initial-scale=1.0"
-            />
-
-            <title>Redefinição de senha</title>
-          </head>
-
-          <body
-            style="
-              margin: 0;
-              padding: 0;
-              background-color: #f4f4f4;
-              font-family: Arial, sans-serif;
-              color: #222222;
-            "
-          >
-            <table
-              width="100%"
-              cellpadding="0"
-              cellspacing="0"
-              border="0"
+        html: `
+          <!DOCTYPE html>
+          <html lang="pt-BR">
+            <head>
+              <meta charset="UTF-8" />
+              <meta
+                name="viewport"
+                content="width=device-width, initial-scale=1.0"
+              />
+              <title>Redefinição de senha</title>
+            </head>
+            <body
               style="
-                width: 100%;
+                margin: 0;
+                padding: 0;
                 background-color: #f4f4f4;
-                padding: 30px 15px;
+                font-family: Arial, sans-serif;
+                color: #222222;
               "
             >
-              <tr>
-                <td align="center">
-                  <table
-                    width="100%"
-                    cellpadding="0"
-                    cellspacing="0"
-                    border="0"
-                    style="
-                      width: 100%;
-                      max-width: 600px;
-                      background-color: #ffffff;
-                      border-radius: 10px;
-                      overflow: hidden;
-                      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
-                    "
-                  >
-                    <tr>
-                      <td
-                        style="
-                          padding: 24px;
-                          background-color: #111111;
-                          color: #ffffff;
-                          text-align: center;
-                        "
-                      >
-                        <h1
+              <table
+                width="100%"
+                cellpadding="0"
+                cellspacing="0"
+                border="0"
+                style="
+                  width: 100%;
+                  background-color: #f4f4f4;
+                  padding: 30px 15px;
+                "
+              >
+                <tr>
+                  <td align="center">
+                    <table
+                      width="100%"
+                      cellpadding="0"
+                      cellspacing="0"
+                      border="0"
+                      style="
+                        width: 100%;
+                        max-width: 600px;
+                        background-color: #ffffff;
+                        border-radius: 10px;
+                        overflow: hidden;
+                        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+                      "
+                    >
+                      <tr>
+                        <td
                           style="
-                            margin: 0;
-                            font-size: 24px;
-                            line-height: 1.3;
+                            padding: 24px;
+                            background-color: #111111;
+                            color: #ffffff;
+                            text-align: center;
                           "
                         >
-                          Campo Limpo RP
-                        </h1>
-                      </td>
-                    </tr>
+                          <h1
+                            style="
+                              margin: 0;
+                              font-size: 24px;
+                              line-height: 1.3;
+                            "
+                          >
+                            Campo Limpo RP
+                          </h1>
+                        </td>
+                      </tr>
 
-                    <tr>
-                      <td style="padding: 32px 28px;">
-                        <h2
-                          style="
-                            margin: 0 0 18px;
-                            font-size: 22px;
-                            color: #111111;
-                          "
-                        >
-                          Redefinição de senha
-                        </h2>
+                      <tr>
+                        <td style="padding: 32px 28px;">
+                          <h2
+                            style="
+                              margin: 0 0 18px;
+                              font-size: 22px;
+                              color: #111111;
+                            "
+                          >
+                            Redefinição de senha
+                          </h2>
 
-                        <p
-                          style="
-                            margin: 0 0 16px;
-                            font-size: 15px;
-                            line-height: 1.6;
-                          "
-                        >
-                          Foi solicitada uma redefinição de senha para sua
-                          conta do painel administrativo.
-                        </p>
+                          <p
+                            style="
+                              margin: 0 0 16px;
+                              font-size: 15px;
+                              line-height: 1.6;
+                            "
+                          >
+                            Foi solicitada uma redefinição de senha para sua
+                            conta do painel administrativo.
+                          </p>
 
-                        <p
-                          style="
-                            margin: 0 0 24px;
-                            font-size: 15px;
-                            line-height: 1.6;
-                          "
-                        >
-                          Clique no botão abaixo para cadastrar uma nova senha.
-                        </p>
+                          <p
+                            style="
+                              margin: 0 0 24px;
+                              font-size: 15px;
+                              line-height: 1.6;
+                            "
+                          >
+                            Clique no botão abaixo para cadastrar uma nova
+                            senha.
+                          </p>
 
-                        <table
-                          cellpadding="0"
-                          cellspacing="0"
-                          border="0"
-                          style="margin: 0 auto 26px;"
-                        >
-                          <tr>
-                            <td
-                              align="center"
-                              style="
-                                background-color: #111111;
-                                border-radius: 6px;
-                              "
-                            >
-                              <a
-                                href="${resetUrl}"
-                                target="_blank"
-                                rel="noopener noreferrer"
+                          <table
+                            cellpadding="0"
+                            cellspacing="0"
+                            border="0"
+                            style="margin: 0 auto 26px;"
+                          >
+                            <tr>
+                              <td
+                                align="center"
                                 style="
-                                  display: inline-block;
-                                  padding: 13px 22px;
-                                  color: #ffffff;
-                                  text-decoration: none;
-                                  font-size: 15px;
-                                  font-weight: bold;
+                                  background-color: #111111;
+                                  border-radius: 6px;
                                 "
                               >
-                                Redefinir minha senha
-                              </a>
-                            </td>
-                          </tr>
-                        </table>
+                                <a
+                                  href="${resetUrl}"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style="
+                                    display: inline-block;
+                                    padding: 13px 22px;
+                                    color: #ffffff;
+                                    text-decoration: none;
+                                    font-size: 15px;
+                                    font-weight: bold;
+                                  "
+                                >
+                                  Redefinir minha senha
+                                </a>
+                              </td>
+                            </tr>
+                          </table>
 
-                        <p
-                          style="
-                            margin: 0 0 16px;
-                            font-size: 14px;
-                            line-height: 1.6;
-                          "
-                        >
-                          Este link é válido por
-                          <strong>
-                            ${RESET_TOKEN_DURATION_MINUTES} minutos
-                          </strong>.
-                        </p>
+                          <p
+                            style="
+                              margin: 0 0 16px;
+                              font-size: 14px;
+                              line-height: 1.6;
+                            "
+                          >
+                            Este link é válido por
+                            <strong>
+                              ${RESET_TOKEN_DURATION_MINUTES} minutos
+                            </strong>.
+                          </p>
 
-                        <p
-                          style="
-                            margin: 0 0 12px;
-                            font-size: 14px;
-                            line-height: 1.6;
-                          "
-                        >
-                          Caso o botão não funcione, copie e cole o endereço
-                          abaixo no navegador:
-                        </p>
+                          <p
+                            style="
+                              margin: 0 0 12px;
+                              font-size: 14px;
+                              line-height: 1.6;
+                            "
+                          >
+                            Caso o botão não funcione, copie e cole o
+                            endereço abaixo no navegador:
+                          </p>
 
-                        <p
+                          <p
+                            style="
+                              margin: 0 0 22px;
+                              padding: 12px;
+                              background-color: #f2f2f2;
+                              border-radius: 5px;
+                              font-size: 12px;
+                              line-height: 1.5;
+                              word-break: break-all;
+                              color: #444444;
+                            "
+                          >
+                            ${resetUrl}
+                          </p>
+
+                          <p
+                            style="
+                              margin: 0;
+                              font-size: 13px;
+                              line-height: 1.6;
+                              color: #666666;
+                            "
+                          >
+                            Caso você não tenha solicitado a alteração,
+                            ignore este e-mail. Sua senha continuará a
+                            mesma.
+                          </p>
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td
                           style="
-                            margin: 0 0 22px;
-                            padding: 12px;
-                            background-color: #f2f2f2;
-                            border-radius: 5px;
+                            padding: 18px;
+                            background-color: #eeeeee;
+                            text-align: center;
                             font-size: 12px;
-                            line-height: 1.5;
-                            word-break: break-all;
-                            color: #444444;
-                          "
-                        >
-                          ${resetUrl}
-                        </p>
-
-                        <p
-                          style="
-                            margin: 0;
-                            font-size: 13px;
-                            line-height: 1.6;
                             color: #666666;
                           "
                         >
-                          Caso você não tenha solicitado a alteração, ignore
-                          este e-mail. Sua senha continuará a mesma.
-                        </p>
-                      </td>
-                    </tr>
-
-                    <tr>
-                      <td
-                        style="
-                          padding: 18px;
-                          background-color: #eeeeee;
-                          text-align: center;
-                          font-size: 12px;
-                          color: #666666;
-                        "
-                      >
-                        Campo Limpo Roleplay
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </body>
-        </html>
-      `,
-    });
+                          Campo Limpo Roleplay
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+          </html>
+        `,
+      });
+    } catch (sendError) {
+      sendError.stage = "SMTP_SEND";
+      throw sendError;
+    }
 
     console.log("========================================");
     console.log("E-MAIL ENVIADO COM SUCESSO");
@@ -434,17 +469,10 @@ router.get("/debug-smtp", async (req, res) => {
       },
     });
   } catch (error) {
+    error.stage = error.stage || "SMTP_VERIFY";
     logError("ERRO NO TESTE DE SMTP", error);
 
-    return res.status(500).json({
-      success: false,
-      message: "Não foi possível conectar ao servidor SMTP.",
-      error: error?.message,
-      code: error?.code,
-      command: error?.command,
-      response: error?.response,
-      responseCode: error?.responseCode,
-    });
+    return res.status(500).json(buildDebugPayload(error));
   } finally {
     if (transporter) {
       transporter.close();
@@ -485,15 +513,21 @@ router.post("/forgot-password", async (req, res) => {
 
     console.log("Consultando usuário pelo e-mail:", email);
 
-    const [users] = await pool.execute(
-      `
-      SELECT id, email
-      FROM users
-      WHERE LOWER(email) = ?
-      LIMIT 1
-      `,
-      [email]
-    );
+    let users;
+    try {
+      [users] = await pool.execute(
+        `
+        SELECT id, email
+        FROM users
+        WHERE LOWER(email) = ?
+        LIMIT 1
+        `,
+        [email]
+      );
+    } catch (dbError) {
+      dbError.stage = "DB_LOOKUP";
+      throw dbError;
+    }
 
     console.log("Usuários encontrados:", users.length);
 
@@ -517,34 +551,39 @@ router.post("/forgot-password", async (req, res) => {
       Date.now() + RESET_TOKEN_DURATION_MINUTES * 60 * 1000
     );
 
-    connection = await pool.getConnection();
+    try {
+      connection = await pool.getConnection();
 
-    await connection.beginTransaction();
-    transactionStarted = true;
+      await connection.beginTransaction();
+      transactionStarted = true;
 
-    // Invalida tokens anteriores ainda não utilizados.
-    await connection.execute(
-      `
-      UPDATE password_reset_tokens
-      SET used_at = NOW()
-      WHERE user_id = ?
-        AND used_at IS NULL
-      `,
-      [user.id]
-    );
+      // Invalida tokens anteriores ainda não utilizados.
+      await connection.execute(
+        `
+        UPDATE password_reset_tokens
+        SET used_at = NOW()
+        WHERE user_id = ?
+          AND used_at IS NULL
+        `,
+        [user.id]
+      );
 
-    // Insere o novo token.
-    await connection.execute(
-      `
-      INSERT INTO password_reset_tokens (
-        user_id,
-        token_hash,
-        expires_at
-      )
-      VALUES (?, ?, ?)
-      `,
-      [user.id, tokenHash, expiresAt]
-    );
+      // Insere o novo token.
+      await connection.execute(
+        `
+        INSERT INTO password_reset_tokens (
+          user_id,
+          token_hash,
+          expires_at
+        )
+        VALUES (?, ?, ?)
+        `,
+        [user.id, tokenHash, expiresAt]
+      );
+    } catch (dbError) {
+      dbError.stage = "DB_TRANSACTION_INSERT";
+      throw dbError;
+    }
 
     const resetUrl =
       `${getFrontendUrl()}/admin/redefinir-senha` +
@@ -586,15 +625,7 @@ router.post("/forgot-password", async (req, res) => {
 
     return res.status(500).json({
       message: "Não foi possível enviar o e-mail de recuperação.",
-
-      debug: {
-        error: error?.message,
-        code: error?.code,
-        command: error?.command,
-        response: error?.response,
-        responseCode: error?.responseCode,
-        sqlMessage: error?.sqlMessage,
-      },
+      debug: buildDebugPayload(error),
     });
   } finally {
     if (connection) {
@@ -735,12 +766,7 @@ router.post("/reset-password", async (req, res) => {
 
     return res.status(500).json({
       message: "Não foi possível redefinir a senha.",
-
-      debug: {
-        error: error?.message,
-        code: error?.code,
-        sqlMessage: error?.sqlMessage,
-      },
+      debug: buildDebugPayload(error),
     });
   } finally {
     if (connection) {

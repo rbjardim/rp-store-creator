@@ -2,7 +2,10 @@ const express = require("express");
 const crypto = require("crypto");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
+const dns = require("node:dns");
 const pool = require("../db");
+
+dns.setDefaultResultOrder("ipv4first");
 
 const router = express.Router();
 
@@ -61,9 +64,20 @@ function createEmailTransporter() {
     port: smtp.port,
     secure: smtp.secure,
 
+    // Força a conexão SMTP usando IPv4.
+    family: 4,
+
     auth: {
       user: smtp.user,
       pass: smtp.pass,
+    },
+
+    // A porta 587 utiliza STARTTLS.
+    requireTLS: smtp.port === 587,
+
+    tls: {
+      servername: smtp.host,
+      minVersion: "TLSv1.2",
     },
 
     connectionTimeout: 30000,
@@ -109,7 +123,7 @@ async function sendResetEmail(email, resetUrl) {
   const transporter = createEmailTransporter();
 
   try {
-    console.log("Verificando conexão SMTP...");
+    console.log("Verificando conexão SMTP por IPv4...");
 
     await transporter.verify();
 
@@ -137,10 +151,12 @@ async function sendResetEmail(email, resetUrl) {
         <html lang="pt-BR">
           <head>
             <meta charset="UTF-8" />
+
             <meta
               name="viewport"
               content="width=device-width, initial-scale=1.0"
             />
+
             <title>Redefinição de senha</title>
           </head>
 
@@ -150,7 +166,7 @@ async function sendResetEmail(email, resetUrl) {
               padding: 0;
               background-color: #f4f4f4;
               font-family: Arial, sans-serif;
-              color: #222;
+              color: #222222;
             "
           >
             <table
@@ -158,7 +174,11 @@ async function sendResetEmail(email, resetUrl) {
               cellpadding="0"
               cellspacing="0"
               border="0"
-              style="background-color: #f4f4f4; padding: 30px 15px;"
+              style="
+                width: 100%;
+                background-color: #f4f4f4;
+                padding: 30px 15px;
+              "
             >
               <tr>
                 <td align="center">
@@ -168,6 +188,7 @@ async function sendResetEmail(email, resetUrl) {
                     cellspacing="0"
                     border="0"
                     style="
+                      width: 100%;
                       max-width: 600px;
                       background-color: #ffffff;
                       border-radius: 10px;
@@ -352,28 +373,31 @@ async function sendResetEmail(email, resetUrl) {
   }
 }
 
-// Teste para confirmar que este arquivo está carregado.
+// Confirma se o arquivo e as variáveis foram carregados.
 router.get("/debug-auth", (req, res) => {
+  const smtp = getSmtpConfiguration();
+
   return res.status(200).json({
     success: true,
     message: "Arquivo de autenticação carregado.",
     date: new Date().toISOString(),
     frontendUrl: getFrontendUrl(),
+
     smtp: {
-      hostConfigured: Boolean(process.env.SMTP_HOST),
-      port: Number(process.env.SMTP_PORT || 587),
-      secure:
-        String(process.env.SMTP_SECURE || "").toLowerCase() === "true" ||
-        Number(process.env.SMTP_PORT || 587) === 465,
-      userConfigured: Boolean(process.env.SMTP_USER),
-      passConfigured: Boolean(process.env.SMTP_PASS),
-      fromConfigured: Boolean(process.env.SMTP_FROM),
+      hostConfigured: Boolean(smtp.host),
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      ipv4Forced: true,
+      userConfigured: Boolean(smtp.user),
+      passConfigured: Boolean(smtp.pass),
+      fromConfigured: Boolean(smtp.from),
     },
   });
 });
 
 // Teste de conexão SMTP.
-// Remova esta rota depois que o problema for resolvido.
+// Remova esta rota depois que o envio estiver funcionando.
 router.get("/debug-smtp", async (req, res) => {
   let transporter;
 
@@ -382,21 +406,29 @@ router.get("/debug-smtp", async (req, res) => {
 
     const smtp = getSmtpConfiguration();
 
-    transporter = createEmailTransporter();
+    console.log("========================================");
+    console.log("INICIANDO TESTE SMTP");
+    console.log("HOST:", smtp.host);
+    console.log("PORTA:", smtp.port);
+    console.log("SECURE:", smtp.secure);
+    console.log("FAMILY: IPv4");
+    console.log("========================================");
 
-    console.log("Iniciando teste manual de SMTP...");
+    transporter = createEmailTransporter();
 
     await transporter.verify();
 
-    console.log("Teste manual de SMTP concluído.");
+    console.log("Teste SMTP concluído com sucesso.");
 
     return res.status(200).json({
       success: true,
       message: "Conexão SMTP realizada com sucesso.",
+
       smtp: {
         host: smtp.host,
         port: smtp.port,
         secure: smtp.secure,
+        family: 4,
         user: smtp.user,
         from: smtp.from,
       },
@@ -420,7 +452,7 @@ router.get("/debug-smtp", async (req, res) => {
   }
 });
 
-// Solicitar recuperação de senha
+// Solicitar recuperação de senha.
 router.post("/forgot-password", async (req, res) => {
   let connection;
   let transactionStarted = false;
@@ -432,19 +464,14 @@ router.post("/forgot-password", async (req, res) => {
   console.log("URL:", req.originalUrl);
   console.log("ORIGIN:", req.headers.origin);
   console.log("CONTENT-TYPE:", req.headers["content-type"]);
-  console.log("BODY:", req.body);
   console.log("========================================");
 
   try {
-    console.log("1. Validando e-mail recebido.");
-
     const email = String(req.body?.email || "")
       .trim()
       .toLowerCase();
 
     if (!email) {
-      console.log("E-mail não informado.");
-
       return res.status(400).json({
         message: "Informe o e-mail.",
       });
@@ -456,7 +483,7 @@ router.post("/forgot-password", async (req, res) => {
       });
     }
 
-    console.log("2. Consultando usuário pelo e-mail:", email);
+    console.log("Consultando usuário pelo e-mail:", email);
 
     const [users] = await pool.execute(
       `
@@ -468,22 +495,16 @@ router.post("/forgot-password", async (req, res) => {
       [email]
     );
 
-    console.log("3. Quantidade de usuários encontrados:", users.length);
+    console.log("Usuários encontrados:", users.length);
 
-    // Não revela se o e-mail existe ou não.
+    // Não informa se o e-mail existe ou não.
     if (!users.length) {
-      console.log(
-        "E-mail não encontrado. Retornando mensagem genérica."
-      );
-
       return res.status(200).json({
         message: GENERIC_MESSAGE,
       });
     }
 
     const user = users[0];
-
-    console.log("4. Usuário encontrado. ID:", user.id);
 
     const token = crypto.randomBytes(32).toString("hex");
 
@@ -496,20 +517,12 @@ router.post("/forgot-password", async (req, res) => {
       Date.now() + RESET_TOKEN_DURATION_MINUTES * 60 * 1000
     );
 
-    console.log("5. Token gerado.");
-    console.log("Expiração:", expiresAt.toISOString());
-
-    console.log("6. Obtendo conexão com o banco.");
-
     connection = await pool.getConnection();
-
-    console.log("7. Iniciando transação.");
 
     await connection.beginTransaction();
     transactionStarted = true;
 
-    console.log("8. Invalidando tokens antigos.");
-
+    // Invalida tokens anteriores ainda não utilizados.
     await connection.execute(
       `
       UPDATE password_reset_tokens
@@ -520,8 +533,7 @@ router.post("/forgot-password", async (req, res) => {
       [user.id]
     );
 
-    console.log("9. Inserindo novo token.");
-
+    // Insere o novo token.
     await connection.execute(
       `
       INSERT INTO password_reset_tokens (
@@ -538,21 +550,19 @@ router.post("/forgot-password", async (req, res) => {
       `${getFrontendUrl()}/admin/redefinir-senha` +
       `?token=${encodeURIComponent(token)}`;
 
-    console.log("10. URL de redefinição criada:", resetUrl);
-    console.log("11. Iniciando envio do e-mail.");
+    console.log("URL de redefinição criada:", resetUrl);
+    console.log("Iniciando envio do e-mail.");
 
     /*
-     * O e-mail é enviado antes do commit.
+     * Envia o e-mail antes do commit.
      * Caso o envio falhe, o token não será salvo.
      */
     await sendResetEmail(user.email, resetUrl);
 
-    console.log("12. E-mail enviado. Realizando commit.");
-
     await connection.commit();
     transactionStarted = false;
 
-    console.log("13. Recuperação criada com sucesso.");
+    console.log("Recuperação de senha criada com sucesso.");
 
     return res.status(200).json({
       message: GENERIC_MESSAGE,
@@ -560,10 +570,7 @@ router.post("/forgot-password", async (req, res) => {
   } catch (error) {
     if (connection && transactionStarted) {
       try {
-        console.log("Desfazendo transação do forgot-password.");
-
         await connection.rollback();
-
         transactionStarted = false;
 
         console.log("Rollback realizado com sucesso.");
@@ -597,7 +604,7 @@ router.post("/forgot-password", async (req, res) => {
   }
 });
 
-// Salvar a nova senha
+// Salvar a nova senha.
 router.post("/reset-password", async (req, res) => {
   let connection;
   let transactionStarted = false;
@@ -636,14 +643,10 @@ router.post("/reset-password", async (req, res) => {
       .update(token)
       .digest("hex");
 
-    console.log("Obtendo conexão para redefinir a senha.");
-
     connection = await pool.getConnection();
 
     await connection.beginTransaction();
     transactionStarted = true;
-
-    console.log("Consultando token de recuperação.");
 
     const [tokens] = await connection.execute(
       `
@@ -669,11 +672,6 @@ router.post("/reset-password", async (req, res) => {
 
     const resetToken = tokens[0];
 
-    console.log(
-      "Token válido encontrado para o usuário:",
-      resetToken.user_id
-    );
-
     const passwordHash = await bcrypt.hash(password, 12);
 
     const [updateResult] = await connection.execute(
@@ -691,8 +689,6 @@ router.post("/reset-password", async (req, res) => {
       );
     }
 
-    console.log("Senha do usuário atualizada.");
-
     // Marca o token atual como utilizado.
     await connection.execute(
       `
@@ -703,7 +699,7 @@ router.post("/reset-password", async (req, res) => {
       [resetToken.id]
     );
 
-    // Invalida qualquer outro token ativo desse usuário.
+    // Invalida qualquer outro token ativo do usuário.
     await connection.execute(
       `
       UPDATE password_reset_tokens

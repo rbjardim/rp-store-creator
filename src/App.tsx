@@ -14,6 +14,8 @@ import Checkout from "./pages/Checkout";
 import Sucesso from "./pages/Sucesso";
 import Reprovado from "./pages/Reprovado";
 import Pendente from "./pages/Pendente";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
@@ -35,6 +37,8 @@ const App = () => (
               <Route path="/sucesso" element={<Sucesso />} />
               <Route path="/erro" element={<Reprovado />} />
               <Route path="/pendente" element={<Pendente />} />
+              <Route path="/admin/esqueci-senha" element={<ForgotPassword />} />
+              <Route path="/admin/redefinir-senha" element={<ResetPassword />} />
             </Routes>
           </BrowserRouter>
         </TooltipProvider>

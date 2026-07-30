@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -80,6 +80,15 @@ const AdminLogin = () => {
               className="w-full rounded-md border border-border bg-secondary px-3 py-2 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
               required
             />
+          </div>
+
+          <div className="flex justify-end">
+            <Link
+              to="/admin/esqueci-senha"
+              className="text-sm text-primary hover:underline"
+            >
+              Esqueci minha senha
+            </Link>
           </div>
 
           <div className="flex items-center gap-2">

@@ -33,6 +33,9 @@ function createEmailTransporter() {
     connectionTimeout: 15000,
     greetingTimeout: 15000,
     socketTimeout: 20000,
+
+    logger: true,
+    debug: true,
   });
 }
 
@@ -54,105 +57,79 @@ async function sendResetEmail(email, resetUrl) {
     );
   }
 
+  console.log("Preparando envio de recuperação para:", email);
+  console.log("SMTP_HOST:", process.env.SMTP_HOST);
+  console.log("SMTP_PORT:", process.env.SMTP_PORT || "587");
+  console.log("SMTP_USER:", process.env.SMTP_USER);
+  console.log("SMTP_FROM:", process.env.SMTP_FROM);
+
   const transporter = createEmailTransporter();
 
-    const info = await transporter.sendMail({
-      from: process.env.SMTP_FROM,
-      to: email,
-      subject: "Redefinição de senha — Campo Limpo RP",
+  console.log("Verificando conexão SMTP...");
 
-      text: [
-        "Foi solicitada uma redefinição de senha para sua conta.",
-        "",
-        "Acesse o link abaixo para criar uma nova senha:",
-        resetUrl,
-        "",
-        `O link é válido por ${RESET_TOKEN_DURATION_MINUTES} minutos.`,
-        "",
-        "Caso você não tenha solicitado a alteração, ignore este e-mail.",
-      ].join("\n"),
+  await transporter.verify();
 
-      html: `
-        <div
-          style="
-            background-color: #f3f4f6;
-            padding: 32px 16px;
-            font-family: Arial, Helvetica, sans-serif;
-            color: #111827;
-          "
-        >
-          <div
+  console.log("Conexão SMTP verificada.");
+  console.log("Enviando e-mail...");
+
+  const info = await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to: email,
+    subject: "Redefinição de senha — Campo Limpo RP",
+
+    text: [
+      "Foi solicitada uma redefinição de senha para sua conta.",
+      "",
+      "Acesse o link abaixo para criar uma nova senha:",
+      resetUrl,
+      "",
+      `O link é válido por ${RESET_TOKEN_DURATION_MINUTES} minutos.`,
+      "",
+      "Caso você não tenha solicitado a alteração, ignore este e-mail.",
+    ].join("\n"),
+
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
+        <h2>Redefinição de senha</h2>
+
+        <p>
+          Foi solicitada uma redefinição de senha para sua conta do painel
+          administrativo.
+        </p>
+
+        <p style="margin: 28px 0;">
+          <a
+            href="${resetUrl}"
             style="
-              max-width: 560px;
-              margin: 0 auto;
-              background-color: #ffffff;
-              border: 1px solid #e5e7eb;
-              border-radius: 10px;
-              padding: 32px;
+              display: inline-block;
+              padding: 12px 20px;
+              background: #111;
+              color: #fff;
+              text-decoration: none;
+              border-radius: 6px;
+              font-weight: bold;
             "
           >
-            <h2 style="margin-top: 0;">
-              Redefinição de senha
-            </h2>
+            Redefinir minha senha
+          </a>
+        </p>
 
-            <p>
-              Foi solicitada uma redefinição de senha para sua conta do
-              painel administrativo.
-            </p>
+        <p>
+          Esse link é válido por
+          <strong>${RESET_TOKEN_DURATION_MINUTES} minutos</strong>.
+        </p>
 
-            <p style="margin: 28px 0;">
-              <a
-                href="${resetUrl}"
-                style="
-                  display: inline-block;
-                  padding: 12px 20px;
-                  background-color: #111827;
-                  color: #ffffff;
-                  text-decoration: none;
-                  border-radius: 6px;
-                  font-weight: bold;
-                "
-              >
-                Redefinir minha senha
-              </a>
-            </p>
+        <p style="font-size: 13px; color: #666;">
+          Caso você não tenha solicitado a alteração, ignore este e-mail.
+        </p>
+      </div>
+    `,
+  });
 
-            <p>
-              Esse link é válido por
-              <strong>${RESET_TOKEN_DURATION_MINUTES} minutos</strong>.
-            </p>
-
-            <p style="font-size: 13px; color: #6b7280;">
-              Caso você não tenha solicitado a alteração, ignore este
-              e-mail. Sua senha atual continuará funcionando.
-            </p>
-
-            <hr
-              style="
-                border: 0;
-                border-top: 1px solid #e5e7eb;
-                margin: 24px 0;
-              "
-            />
-
-            <p style="font-size: 12px; color: #9ca3af;">
-              Campo Limpo RP
-            </p>
-          </div>
-        </div>
-      `,
-    });
-
-
-  return info;
+  console.log("E-mail enviado com sucesso:", info.messageId);
 }
 
-/*
-|--------------------------------------------------------------------------
-| SOLICITAR RECUPERAÇÃO DE SENHA
-|--------------------------------------------------------------------------
-*/
-
+// Solicitar recuperação de senha
 router.post("/forgot-password", async (req, res) => {
   let connection;
   let transactionStarted = false;
@@ -170,11 +147,7 @@ router.post("/forgot-password", async (req, res) => {
 
     const [users] = await pool.execute(
       `
-      SELECT
-        id,
-        login,
-        email,
-        active
+      SELECT id, email
       FROM users
       WHERE LOWER(email) = ?
       LIMIT 1
@@ -182,16 +155,14 @@ router.post("/forgot-password", async (req, res) => {
       [email]
     );
 
-    const user = users[0];
-
-    /*
-     * Não informa se o e-mail existe, se está inativo ou não.
-     */
-    if (!user || !user.active) {
+    // Não revela se o e-mail existe ou não.
+    if (!users.length) {
       return res.status(200).json({
         message: GENERIC_MESSAGE,
       });
     }
+
+    const user = users[0];
 
     const token = crypto.randomBytes(32).toString("hex");
 
@@ -209,9 +180,7 @@ router.post("/forgot-password", async (req, res) => {
     await connection.beginTransaction();
     transactionStarted = true;
 
-    /*
-     * Invalida tokens anteriores ainda não utilizados.
-     */
+    // Invalida solicitações anteriores ainda não utilizadas.
     await connection.execute(
       `
       UPDATE password_reset_tokens
@@ -239,8 +208,8 @@ router.post("/forgot-password", async (req, res) => {
       `?token=${encodeURIComponent(token)}`;
 
     /*
-     * Se o envio falhar, a transação será desfeita
-     * e o token não ficará válido no banco.
+     * Envia o e-mail antes do commit.
+     * Se o envio falhar, o token não será salvo.
      */
     await sendResetEmail(user.email, resetUrl);
 
@@ -256,7 +225,7 @@ router.post("/forgot-password", async (req, res) => {
         await connection.rollback();
       } catch (rollbackError) {
         console.error(
-          "Erro ao desfazer solicitação de recuperação:",
+          "Erro ao desfazer solicitação de senha:",
           rollbackError
         );
       }
@@ -274,12 +243,7 @@ router.post("/forgot-password", async (req, res) => {
   }
 });
 
-/*
-|--------------------------------------------------------------------------
-| REDEFINIR SENHA
-|--------------------------------------------------------------------------
-*/
-
+// Salvar a nova senha
 router.post("/reset-password", async (req, res) => {
   let connection;
   let transactionStarted = false;
@@ -318,16 +282,11 @@ router.post("/reset-password", async (req, res) => {
 
     const [tokens] = await connection.execute(
       `
-      SELECT
-        prt.id,
-        prt.user_id
-      FROM password_reset_tokens prt
-      INNER JOIN users u
-        ON u.id = prt.user_id
-      WHERE prt.token_hash = ?
-        AND prt.used_at IS NULL
-        AND prt.expires_at > NOW()
-        AND u.active = 1
+      SELECT id, user_id
+      FROM password_reset_tokens
+      WHERE token_hash = ?
+        AND used_at IS NULL
+        AND expires_at > NOW()
       LIMIT 1
       FOR UPDATE
       `,
@@ -350,24 +309,17 @@ router.post("/reset-password", async (req, res) => {
     const [updateResult] = await connection.execute(
       `
       UPDATE users
-      SET
-        password_hash = ?,
-        updated_at = NOW()
+      SET password_hash = ?
       WHERE id = ?
-      LIMIT 1
       `,
       [passwordHash, resetToken.user_id]
     );
 
-    if (updateResult.affectedRows !== 1) {
-      throw new Error(
-        `Não foi possível atualizar o usuário ${resetToken.user_id}.`
-      );
+    if (!updateResult.affectedRows) {
+      throw new Error("Usuário da recuperação não foi encontrado.");
     }
 
-    /*
-     * Marca o token atual como utilizado.
-     */
+    // Marca o token atual como utilizado.
     await connection.execute(
       `
       UPDATE password_reset_tokens
@@ -377,9 +329,7 @@ router.post("/reset-password", async (req, res) => {
       [resetToken.id]
     );
 
-    /*
-     * Invalida qualquer outro token ativo do usuário.
-     */
+    // Invalida qualquer outro token ativo desse usuário.
     await connection.execute(
       `
       UPDATE password_reset_tokens

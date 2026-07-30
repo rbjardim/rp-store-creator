@@ -2,7 +2,11 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
-const API_URL = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+const API_URL = String(
+  import.meta.env.VITE_API_URL || "https://api.campolimporp.com.br"
+)
+  .replace(/\/+$/, "")
+  .replace(/\/api$/, "");
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState("");
@@ -23,21 +27,12 @@ const ForgotPassword = () => {
       return;
     }
 
-    if (!API_URL) {
-      toast({
-        title: "Erro de configuração",
-        description: "A URL da API não está configurada.",
-        variant: "destructive",
-      });
-
-      console.error("VITE_API_URL não está configurada.");
-      return;
-    }
-
     setIsLoading(true);
 
     try {
       const endpoint = `${API_URL}/api/auth/forgot-password`;
+
+      console.log("Endpoint da recuperação:", endpoint);
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -50,21 +45,21 @@ const ForgotPassword = () => {
         }),
       });
 
-      const contentType = response.headers.get("content-type") || "";
+      const responseText = await response.text();
+
+      console.log("Resposta da recuperação:", {
+        endpoint,
+        responseUrl: response.url,
+        status: response.status,
+        contentType: response.headers.get("content-type"),
+        responseText,
+      });
+
       let data: { message?: string } = {};
 
-      if (contentType.includes("application/json")) {
-        data = await response.json();
-      } else {
-        const responseText = await response.text();
-
-        console.error("A API retornou uma resposta que não é JSON:", {
-          endpoint,
-          status: response.status,
-          contentType,
-          responseText,
-        });
-
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
         throw new Error(
           `A API retornou uma resposta inválida. Código: ${response.status}.`
         );

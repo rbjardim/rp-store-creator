@@ -4,7 +4,9 @@ const path = require("path");
 require("dotenv").config();
 
 const pool = require("./db");
+
 const authRoutes = require("./routes/auth.routes");
+const passwordRoutes = require("./routes/password.routes");
 const settingsRoutes = require("./routes/settings.routes");
 const categoriesRoutes = require("./routes/categories.routes");
 const productsRoutes = require("./routes/products.routes");
@@ -20,20 +22,26 @@ const app = express();
 
 const allowedOrigins = [
   "http://localhost:5173",
+  "http://localhost:8080",
   "https://rp-store-creator.vercel.app",
   "https://loja.campolimporp.com.br",
-  "http://localhost:8080",
 ];
 
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      return callback(null, true);
+    }
+
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
+
+    console.error("Origem bloqueada pelo CORS:", origin);
+
     return callback(new Error(`Origin não permitida: ${origin}`));
   },
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
 };
@@ -47,7 +55,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.resolve(__dirname, "../uploads")));
 
 app.use((req, res, next) => {
-  console.log("METHOD:", req.method, "URL:", req.url);
+  console.log("========================================");
+  console.log("METHOD:", req.method);
+  console.log("URL:", req.originalUrl);
   console.log("ORIGIN:", req.headers.origin);
   console.log("CONTENT-TYPE:", req.headers["content-type"]);
   next();
@@ -62,7 +72,7 @@ app.post("/api/test-body", (req, res) => {
   res.json({ body: req.body });
 });
 
-// Health check simples para o Render
+// Health Check
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     ok: true,
@@ -72,17 +82,18 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Health check separado para testar o banco manualmente
 app.get("/api/health/db", async (req, res) => {
   try {
     const [rows] = await pool.execute("SELECT 1 AS ok");
+
     res.status(200).json({
       ok: true,
       message: "Banco conectado",
       database: rows[0],
     });
   } catch (error) {
-    console.error("Erro no banco:", error);
+    console.error(error);
+
     res.status(500).json({
       ok: false,
       message: "Erro ao conectar no banco",
@@ -91,7 +102,15 @@ app.get("/api/health/db", async (req, res) => {
   }
 });
 
+/*
+|--------------------------------------------------------------------------
+| ROTAS
+|--------------------------------------------------------------------------
+*/
+
 app.use("/api/auth", authRoutes);
+app.use("/api/auth", passwordRoutes);
+
 app.use("/api/settings", settingsRoutes);
 app.use("/api/categories", categoriesRoutes);
 app.use("/api/products", productsRoutes);
@@ -99,6 +118,38 @@ app.use("/api/users", usersRoutes);
 app.use("/api/coupons", couponsRoutes);
 app.use("/api/checkout", checkoutRoutes);
 app.use("/api/discord", discordRoutes);
+
+/*
+|--------------------------------------------------------------------------
+| 404
+|--------------------------------------------------------------------------
+*/
+
+app.use((req, res) => {
+  res.status(404).json({
+    message: "Rota não encontrada.",
+  });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Tratamento de erros
+|--------------------------------------------------------------------------
+*/
+
+app.use((err, req, res, next) => {
+  console.error("Erro:", err);
+
+  if (err.message && err.message.startsWith("Origin não permitida")) {
+    return res.status(403).json({
+      message: err.message,
+    });
+  }
+
+  return res.status(500).json({
+    message: "Erro interno do servidor.",
+  });
+});
 
 const PORT = process.env.PORT || 3001;
 

@@ -1,6 +1,6 @@
 const express = require("express");
 const crypto = require("crypto");
-const bcrypt = require("bcryptjs");
+const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
 const pool = require("../db");
 

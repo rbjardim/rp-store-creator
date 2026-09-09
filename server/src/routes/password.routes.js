@@ -1,11 +1,9 @@
 const express = require("express");
 const crypto = require("crypto");
 const bcrypt = require("bcrypt");
-const nodemailer = require("nodemailer");
-const dns = require("node:dns");
+const { Resend } = require("resend");
 const pool = require("../db");
 
-dns.setDefaultResultOrder("ipv4first");
 
 const router = express.Router();
 
@@ -20,75 +18,35 @@ function getFrontendUrl() {
   ).replace(/\/+$/, "");
 }
 
-function getSmtpConfiguration() {
-  const smtpPort = Number(process.env.SMTP_PORT || 587);
-
-  const smtpSecure =
-    String(process.env.SMTP_SECURE || "").toLowerCase() === "true" ||
-    smtpPort === 465;
-
+function getResendConfiguration() {
   return {
-    host: String(process.env.SMTP_HOST || "").trim(),
-    port: smtpPort,
-    secure: smtpSecure,
-    user: String(process.env.SMTP_USER || "").trim(),
-    pass: String(process.env.SMTP_PASS || ""),
-    from: String(process.env.SMTP_FROM || "").trim(),
+    apiKey: String(process.env.RESEND_API_KEY || "").trim(),
+    from: String(
+      process.env.RESEND_FROM ||
+        "Campo Limpo RP <noreply@campolimporp.com.br>"
+    ).trim(),
   };
 }
 
-function validateSmtpVariables() {
-  const requiredVariables = [
-    "SMTP_HOST",
-    "SMTP_USER",
-    "SMTP_PASS",
-    "SMTP_FROM",
-  ];
+function validateResendVariables() {
+  const resend = getResendConfiguration();
 
-  const missingVariables = requiredVariables.filter((variable) => {
-    return !String(process.env[variable] || "").trim();
-  });
+  if (!resend.apiKey) {
+    const error = new Error("Variável RESEND_API_KEY ausente.");
+    error.stage = "RESEND_ENV_MISSING";
+    throw error;
+  }
 
-  if (missingVariables.length > 0) {
-    const error = new Error(
-      `Variáveis SMTP ausentes: ${missingVariables.join(", ")}`
-    );
-    error.stage = "SMTP_ENV_MISSING";
+  if (!resend.from) {
+    const error = new Error("Remetente do Resend não configurado.");
+    error.stage = "RESEND_FROM_MISSING";
     throw error;
   }
 }
 
-function createEmailTransporter() {
-  const smtp = getSmtpConfiguration();
-
-  return nodemailer.createTransport({
-    host: smtp.host,
-    port: smtp.port,
-    secure: smtp.secure,
-
-    // Força a conexão SMTP usando IPv4.
-    family: 4,
-
-    auth: {
-      user: smtp.user,
-      pass: smtp.pass,
-    },
-
-    // A porta 587 utiliza STARTTLS.
-    requireTLS: smtp.port === 587,
-
-    tls: {
-      servername: smtp.host,
-      minVersion: "TLSv1.2",
-    },
-
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 15000,
-
-    logger: true,
-    debug: true,
-  });
+function createResendClient() {
+  const resend = getResendConfiguration();
+  return new Resend(resend.apiKey);
 }
 
 function logError(title, error) {
@@ -100,7 +58,7 @@ function logError(title, error) {
   console.error("CÓDIGO:", error?.code);
   console.error("COMANDO:", error?.command);
   console.error("RESPOSTA:", error?.response);
-  console.error("CÓDIGO SMTP:", error?.responseCode);
+  console.error("CÓDIGO DA RESPOSTA:", error?.responseCode);
   console.error("SQL:", error?.sql);
   console.error("SQL MESSAGE:", error?.sqlMessage);
   console.error("STACK:", error?.stack);
@@ -110,7 +68,7 @@ function logError(title, error) {
 /*
  * Monta a resposta de debug de forma consistente.
  * Sempre inclui "stage" para sabermos em qual etapa o processo falhou:
- * DB_LOOKUP, SMTP_ENV_MISSING, SMTP_VERIFY, SMTP_SEND, DB_TRANSACTION.
+ * DB_LOOKUP, RESEND_ENV_MISSING, RESEND_SEND, DB_TRANSACTION.
  */
 function buildDebugPayload(error) {
   return {
@@ -125,292 +83,273 @@ function buildDebugPayload(error) {
 }
 
 async function sendResetEmail(email, resetUrl) {
-  try {
-    validateSmtpVariables();
-  } catch (error) {
-    error.stage = error.stage || "SMTP_ENV_MISSING";
-    throw error;
-  }
+  validateResendVariables();
 
-  const smtp = getSmtpConfiguration();
+  const resendConfig = getResendConfiguration();
+  const resend = createResendClient();
 
   console.log("========================================");
   console.log("PREPARANDO ENVIO DE RECUPERAÇÃO");
+  console.log("PROVEDOR: RESEND");
   console.log("DESTINATÁRIO:", email);
-  console.log("SMTP_HOST:", smtp.host);
-  console.log("SMTP_PORT:", smtp.port);
-  console.log("SMTP_SECURE:", smtp.secure);
-  console.log("SMTP_USER:", smtp.user);
-  console.log("SMTP_FROM:", smtp.from);
+  console.log("REMETENTE:", resendConfig.from);
   console.log("RESET_URL:", resetUrl);
   console.log("========================================");
 
-  const transporter = createEmailTransporter();
+  let result;
 
   try {
-    console.log("Verificando conexão SMTP por IPv4...");
+    result = await resend.emails.send({
+      from: resendConfig.from,
+      to: email,
+      subject: "Redefinição de senha — Campo Limpo RP",
 
-    try {
-      await transporter.verify();
-    } catch (verifyError) {
-      verifyError.stage = "SMTP_VERIFY";
-      throw verifyError;
-    }
+      text: [
+        "Foi solicitada uma redefinição de senha para sua conta.",
+        "",
+        "Acesse o link abaixo para criar uma nova senha:",
+        resetUrl,
+        "",
+        `O link é válido por ${RESET_TOKEN_DURATION_MINUTES} minutos.`,
+        "",
+        "Caso você não tenha solicitado a alteração, ignore este e-mail.",
+      ].join("\n"),
 
-    console.log("Conexão SMTP verificada com sucesso.");
-    console.log("Enviando e-mail de recuperação...");
+      html: `
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+          <head>
+            <meta charset="UTF-8" />
+            <meta
+              name="viewport"
+              content="width=device-width, initial-scale=1.0"
+            />
+            <title>Redefinição de senha</title>
+          </head>
 
-    let info;
-    try {
-      info = await transporter.sendMail({
-        from: smtp.from,
-        to: email,
-        subject: "Redefinição de senha — Campo Limpo RP",
-
-        text: [
-          "Foi solicitada uma redefinição de senha para sua conta.",
-          "",
-          "Acesse o link abaixo para criar uma nova senha:",
-          resetUrl,
-          "",
-          `O link é válido por ${RESET_TOKEN_DURATION_MINUTES} minutos.`,
-          "",
-          "Caso você não tenha solicitado a alteração, ignore este e-mail.",
-        ].join("\n"),
-
-        html: `
-          <!DOCTYPE html>
-          <html lang="pt-BR">
-            <head>
-              <meta charset="UTF-8" />
-              <meta
-                name="viewport"
-                content="width=device-width, initial-scale=1.0"
-              />
-              <title>Redefinição de senha</title>
-            </head>
-            <body
+          <body
+            style="
+              margin: 0;
+              padding: 0;
+              background-color: #f4f4f4;
+              font-family: Arial, sans-serif;
+              color: #222222;
+            "
+          >
+            <table
+              width="100%"
+              cellpadding="0"
+              cellspacing="0"
+              border="0"
               style="
-                margin: 0;
-                padding: 0;
+                width: 100%;
                 background-color: #f4f4f4;
-                font-family: Arial, sans-serif;
-                color: #222222;
+                padding: 30px 15px;
               "
             >
-              <table
-                width="100%"
-                cellpadding="0"
-                cellspacing="0"
-                border="0"
-                style="
-                  width: 100%;
-                  background-color: #f4f4f4;
-                  padding: 30px 15px;
-                "
-              >
-                <tr>
-                  <td align="center">
-                    <table
-                      width="100%"
-                      cellpadding="0"
-                      cellspacing="0"
-                      border="0"
-                      style="
-                        width: 100%;
-                        max-width: 600px;
-                        background-color: #ffffff;
-                        border-radius: 10px;
-                        overflow: hidden;
-                        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
-                      "
-                    >
-                      <tr>
-                        <td
+              <tr>
+                <td align="center">
+                  <table
+                    width="100%"
+                    cellpadding="0"
+                    cellspacing="0"
+                    border="0"
+                    style="
+                      width: 100%;
+                      max-width: 600px;
+                      background-color: #ffffff;
+                      border-radius: 10px;
+                      overflow: hidden;
+                      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+                    "
+                  >
+                    <tr>
+                      <td
+                        style="
+                          padding: 24px;
+                          background-color: #111111;
+                          color: #ffffff;
+                          text-align: center;
+                        "
+                      >
+                        <h1
                           style="
-                            padding: 24px;
-                            background-color: #111111;
-                            color: #ffffff;
-                            text-align: center;
+                            margin: 0;
+                            font-size: 24px;
+                            line-height: 1.3;
                           "
                         >
-                          <h1
-                            style="
-                              margin: 0;
-                              font-size: 24px;
-                              line-height: 1.3;
-                            "
-                          >
-                            Campo Limpo RP
-                          </h1>
-                        </td>
-                      </tr>
+                          Campo Limpo RP
+                        </h1>
+                      </td>
+                    </tr>
 
-                      <tr>
-                        <td style="padding: 32px 28px;">
-                          <h2
-                            style="
-                              margin: 0 0 18px;
-                              font-size: 22px;
-                              color: #111111;
-                            "
-                          >
-                            Redefinição de senha
-                          </h2>
+                    <tr>
+                      <td style="padding: 32px 28px;">
+                        <h2
+                          style="
+                            margin: 0 0 18px;
+                            font-size: 22px;
+                            color: #111111;
+                          "
+                        >
+                          Redefinição de senha
+                        </h2>
 
-                          <p
-                            style="
-                              margin: 0 0 16px;
-                              font-size: 15px;
-                              line-height: 1.6;
-                            "
-                          >
-                            Foi solicitada uma redefinição de senha para sua
-                            conta do painel administrativo.
-                          </p>
+                        <p
+                          style="
+                            margin: 0 0 16px;
+                            font-size: 15px;
+                            line-height: 1.6;
+                          "
+                        >
+                          Foi solicitada uma redefinição de senha para sua
+                          conta do painel administrativo.
+                        </p>
 
-                          <p
-                            style="
-                              margin: 0 0 24px;
-                              font-size: 15px;
-                              line-height: 1.6;
-                            "
-                          >
-                            Clique no botão abaixo para cadastrar uma nova
-                            senha.
-                          </p>
+                        <p
+                          style="
+                            margin: 0 0 24px;
+                            font-size: 15px;
+                            line-height: 1.6;
+                          "
+                        >
+                          Clique no botão abaixo para cadastrar uma nova senha.
+                        </p>
 
-                          <table
-                            cellpadding="0"
-                            cellspacing="0"
-                            border="0"
-                            style="margin: 0 auto 26px;"
-                          >
-                            <tr>
-                              <td
-                                align="center"
+                        <table
+                          cellpadding="0"
+                          cellspacing="0"
+                          border="0"
+                          style="margin: 0 auto 26px;"
+                        >
+                          <tr>
+                            <td
+                              align="center"
+                              style="
+                                background-color: #111111;
+                                border-radius: 6px;
+                              "
+                            >
+                              <a
+                                href="${resetUrl}"
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 style="
-                                  background-color: #111111;
-                                  border-radius: 6px;
+                                  display: inline-block;
+                                  padding: 13px 22px;
+                                  color: #ffffff;
+                                  text-decoration: none;
+                                  font-size: 15px;
+                                  font-weight: bold;
                                 "
                               >
-                                <a
-                                  href="${resetUrl}"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style="
-                                    display: inline-block;
-                                    padding: 13px 22px;
-                                    color: #ffffff;
-                                    text-decoration: none;
-                                    font-size: 15px;
-                                    font-weight: bold;
-                                  "
-                                >
-                                  Redefinir minha senha
-                                </a>
-                              </td>
-                            </tr>
-                          </table>
+                                Redefinir minha senha
+                              </a>
+                            </td>
+                          </tr>
+                        </table>
 
-                          <p
-                            style="
-                              margin: 0 0 16px;
-                              font-size: 14px;
-                              line-height: 1.6;
-                            "
-                          >
-                            Este link é válido por
-                            <strong>
-                              ${RESET_TOKEN_DURATION_MINUTES} minutos
-                            </strong>.
-                          </p>
-
-                          <p
-                            style="
-                              margin: 0 0 12px;
-                              font-size: 14px;
-                              line-height: 1.6;
-                            "
-                          >
-                            Caso o botão não funcione, copie e cole o
-                            endereço abaixo no navegador:
-                          </p>
-
-                          <p
-                            style="
-                              margin: 0 0 22px;
-                              padding: 12px;
-                              background-color: #f2f2f2;
-                              border-radius: 5px;
-                              font-size: 12px;
-                              line-height: 1.5;
-                              word-break: break-all;
-                              color: #444444;
-                            "
-                          >
-                            ${resetUrl}
-                          </p>
-
-                          <p
-                            style="
-                              margin: 0;
-                              font-size: 13px;
-                              line-height: 1.6;
-                              color: #666666;
-                            "
-                          >
-                            Caso você não tenha solicitado a alteração,
-                            ignore este e-mail. Sua senha continuará a
-                            mesma.
-                          </p>
-                        </td>
-                      </tr>
-
-                      <tr>
-                        <td
+                        <p
                           style="
-                            padding: 18px;
-                            background-color: #eeeeee;
-                            text-align: center;
+                            margin: 0 0 16px;
+                            font-size: 14px;
+                            line-height: 1.6;
+                          "
+                        >
+                          Este link é válido por
+                          <strong>
+                            ${RESET_TOKEN_DURATION_MINUTES} minutos
+                          </strong>.
+                        </p>
+
+                        <p
+                          style="
+                            margin: 0 0 12px;
+                            font-size: 14px;
+                            line-height: 1.6;
+                          "
+                        >
+                          Caso o botão não funcione, copie e cole o endereço
+                          abaixo no navegador:
+                        </p>
+
+                        <p
+                          style="
+                            margin: 0 0 22px;
+                            padding: 12px;
+                            background-color: #f2f2f2;
+                            border-radius: 5px;
                             font-size: 12px;
+                            line-height: 1.5;
+                            word-break: break-all;
+                            color: #444444;
+                          "
+                        >
+                          ${resetUrl}
+                        </p>
+
+                        <p
+                          style="
+                            margin: 0;
+                            font-size: 13px;
+                            line-height: 1.6;
                             color: #666666;
                           "
                         >
-                          Campo Limpo Roleplay
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-            </body>
-          </html>
-        `,
-      });
-    } catch (sendError) {
-      sendError.stage = "SMTP_SEND";
-      throw sendError;
-    }
+                          Caso você não tenha solicitado a alteração,
+                          ignore este e-mail. Sua senha continuará a mesma.
+                        </p>
+                      </td>
+                    </tr>
 
-    console.log("========================================");
-    console.log("E-MAIL ENVIADO COM SUCESSO");
-    console.log("MESSAGE ID:", info.messageId);
-    console.log("ACCEPTED:", info.accepted);
-    console.log("REJECTED:", info.rejected);
-    console.log("PENDING:", info.pending);
-    console.log("RESPONSE:", info.response);
-    console.log("========================================");
-
-    return info;
-  } finally {
-    transporter.close();
+                    <tr>
+                      <td
+                        style="
+                          padding: 18px;
+                          background-color: #eeeeee;
+                          text-align: center;
+                          font-size: 12px;
+                          color: #666666;
+                        "
+                      >
+                        Campo Limpo Roleplay
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </body>
+        </html>
+      `,
+    });
+  } catch (error) {
+    error.stage = error.stage || "RESEND_SEND";
+    throw error;
   }
+
+  if (result?.error) {
+    const error = new Error(
+      result.error.message || "Erro ao enviar e-mail pelo Resend."
+    );
+    error.stage = "RESEND_SEND";
+    error.code = result.error.name || result.error.statusCode;
+    error.response = result.error;
+    throw error;
+  }
+
+  console.log("========================================");
+  console.log("E-MAIL ENVIADO COM SUCESSO PELO RESEND");
+  console.log("ID:", result?.data?.id);
+  console.log("========================================");
+
+  return result?.data;
 }
 
 // Confirma se o arquivo e as variáveis foram carregados.
 router.get("/debug-auth", (req, res) => {
-  const smtp = getSmtpConfiguration();
+  const resend = getResendConfiguration();
 
   return res.status(200).json({
     success: true,
@@ -418,65 +357,77 @@ router.get("/debug-auth", (req, res) => {
     date: new Date().toISOString(),
     frontendUrl: getFrontendUrl(),
 
-    smtp: {
-      hostConfigured: Boolean(smtp.host),
-      host: smtp.host,
-      port: smtp.port,
-      secure: smtp.secure,
-      ipv4Forced: true,
-      userConfigured: Boolean(smtp.user),
-      passConfigured: Boolean(smtp.pass),
-      fromConfigured: Boolean(smtp.from),
+    resend: {
+      apiKeyConfigured: Boolean(resend.apiKey),
+      fromConfigured: Boolean(resend.from),
+      from: resend.from,
     },
   });
 });
 
-// Teste de conexão SMTP.
-// Remova esta rota depois que o envio estiver funcionando.
-router.get("/debug-smtp", async (req, res) => {
-  let transporter;
-
+// Teste da API do Resend.
+// Use ?email=seuemail@dominio.com para enviar um e-mail real de teste.
+router.get("/debug-resend", async (req, res) => {
   try {
-    validateSmtpVariables();
+    validateResendVariables();
 
-    const smtp = getSmtpConfiguration();
+    const email = String(req.query?.email || "").trim().toLowerCase();
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Informe um e-mail na URL. Exemplo: /debug-resend?email=voce@dominio.com",
+      });
+    }
+
+    const resendConfig = getResendConfiguration();
+    const resend = createResendClient();
 
     console.log("========================================");
-    console.log("INICIANDO TESTE SMTP");
-    console.log("HOST:", smtp.host);
-    console.log("PORTA:", smtp.port);
-    console.log("SECURE:", smtp.secure);
-    console.log("FAMILY: IPv4");
+    console.log("INICIANDO TESTE RESEND");
+    console.log("DESTINATÁRIO:", email);
+    console.log("REMETENTE:", resendConfig.from);
     console.log("========================================");
 
-    transporter = createEmailTransporter();
+    const result = await resend.emails.send({
+      from: resendConfig.from,
+      to: email,
+      subject: "Teste de e-mail — Campo Limpo RP",
+      text: "Se você recebeu este e-mail, a integração com o Resend está funcionando.",
+      html: `
+        <div style="font-family: Arial, sans-serif;">
+          <h2>Campo Limpo RP</h2>
+          <p>Se você recebeu este e-mail, a integração com o Resend está funcionando.</p>
+        </div>
+      `,
+    });
 
-    await transporter.verify();
+    if (result?.error) {
+      const error = new Error(
+        result.error.message || "Erro ao testar envio pelo Resend."
+      );
+      error.stage = "RESEND_SEND";
+      error.code = result.error.name || result.error.statusCode;
+      error.response = result.error;
+      throw error;
+    }
 
-    console.log("Teste SMTP concluído com sucesso.");
+    console.log("Teste Resend concluído com sucesso.");
+    console.log("ID:", result?.data?.id);
 
     return res.status(200).json({
       success: true,
-      message: "Conexão SMTP realizada com sucesso.",
-
-      smtp: {
-        host: smtp.host,
-        port: smtp.port,
-        secure: smtp.secure,
-        family: 4,
-        user: smtp.user,
-        from: smtp.from,
-      },
+      message: "E-mail de teste enviado com sucesso.",
+      id: result?.data?.id,
+      from: resendConfig.from,
+      to: email,
     });
   } catch (error) {
-    error.stage = error.stage || "SMTP_VERIFY";
-    logError("ERRO NO TESTE DE SMTP", error);
+    error.stage = error.stage || "RESEND_SEND";
+    logError("ERRO NO TESTE DO RESEND", error);
 
     return res.status(500).json(buildDebugPayload(error));
-  } finally {
-    if (transporter) {
-      transporter.close();
-    }
   }
 });
 

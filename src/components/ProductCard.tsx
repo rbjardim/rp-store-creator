@@ -30,14 +30,17 @@ const ProductCard = ({ product }: Props) => {
   const { addItem } = useCart();
 
   const formatPrice = (v: number) =>
-    v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    v.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    });
 
   const imageSrc = getImageUrl(product.image_url);
 
   return (
-    <div className="group card-gradient overflow-hidden rounded-lg border border-border transition-all hover:border-accent/40 hover:shadow-lg">
+    <div className="group card-gradient flex h-full flex-col overflow-hidden rounded-lg border border-border transition-all hover:border-accent/40 hover:shadow-lg">
       
-      <div className="relative aspect-square overflow-hidden bg-secondary">
+      <div className="relative aspect-square shrink-0 overflow-hidden bg-secondary">
         {imageSrc ? (
           <img
             src={imageSrc}
@@ -57,51 +60,54 @@ const ProductCard = ({ product }: Props) => {
         )}
       </div>
 
-      <div className="p-4">
+      <div className="flex flex-1 flex-col p-4">
         <h3 className="text-sm font-bold leading-tight text-foreground">
           {product.name}
         </h3>
 
-        <p className="mt-2 text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground whitespace-pre-line">
           {product.description || "Sem descrição"}
         </p>
 
-        <div className="mt-3 flex items-baseline gap-2">
-          {product.old_price && (
-            <span className="text-xs line-through text-old-price">
-              {formatPrice(product.old_price)}
-            </span>
-          )}
+        {/* Mantém preço e botão sempre no final do card */}
+        <div className="mt-auto pt-3">
+          <div className="flex items-baseline gap-2">
+            {product.old_price && (
+              <span className="text-xs line-through text-old-price">
+                {formatPrice(product.old_price)}
+              </span>
+            )}
 
-          {product.discount && (
-            <span className="text-xs font-bold text-discount">
-              ↘ {product.discount}% OFF
-            </span>
-          )}
+            {product.discount && (
+              <span className="text-xs font-bold text-discount">
+                ↘ {product.discount}% OFF
+              </span>
+            )}
+          </div>
+
+          <p className="mt-1 font-display text-2xl text-foreground">
+            {formatPrice(product.price)}
+          </p>
+
+          <p className="text-xs text-muted-foreground">
+            À vista no Pix
+          </p>
+
+          <button
+            onClick={() =>
+              addItem({
+                id: product.id,
+                name: product.name,
+                price: product.price,
+                image_url: imageSrc,
+              })
+            }
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-md bg-accent py-2.5 text-sm font-semibold text-accent-foreground transition-all hover:opacity-90 active:scale-[0.98]"
+          >
+            <ShoppingCart className="h-4 w-4" />
+            Comprar agora
+          </button>
         </div>
-
-        <p className="mt-1 font-display text-2xl text-foreground">
-          {formatPrice(product.price)}
-        </p>
-
-        <p className="text-xs text-muted-foreground">
-          À vista no Pix
-        </p>
-
-        <button
-          onClick={() =>
-            addItem({
-              id: product.id,
-              name: product.name,
-              price: product.price,
-              image_url: imageSrc,
-            })
-          }
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-md bg-accent py-2.5 text-sm font-semibold text-accent-foreground transition-all hover:opacity-90 active:scale-[0.98]"
-        >
-          <ShoppingCart className="h-4 w-4" />
-          Comprar agora
-        </button>
       </div>
     </div>
   );

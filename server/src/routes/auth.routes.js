@@ -2,7 +2,7 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 const pool = require("../db");
 
 const router = express.Router();
@@ -18,34 +18,37 @@ function getFrontendUrl() {
   ).replace(/\/$/, "");
 }
 
-function createMailTransporter() {
-  const smtpPort = Number(process.env.SMTP_PORT || 587);
+function getResendConfiguration() {
+  return {
+    apiKey: String(process.env.RESEND_API_KEY || "").trim(),
+    from: String(
+      process.env.RESEND_FROM ||
+        "Campo Limpo RP <noreply@campolimporp.com.br>"
+    ).trim(),
+  };
+}
 
-  if (
-    !process.env.SMTP_HOST ||
-    !process.env.SMTP_USER ||
-    !process.env.SMTP_PASS ||
-    !process.env.SMTP_FROM
-  ) {
-    throw new Error("As variáveis SMTP não estão configuradas.");
+function createResendClient() {
+  const config = getResendConfiguration();
+
+  if (!config.apiKey) {
+    throw new Error("RESEND_API_KEY não está configurada.");
   }
 
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: smtpPort,
-    secure: smtpPort === 465,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
+  return new Resend(config.apiKey);
 }
 
 async function sendPasswordResetEmail({ email, login, resetUrl }) {
-  const transporter = createMailTransporter();
+  const config = getResendConfiguration();
+  const resend = createResendClient();
 
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
+  console.log("PREPARANDO ENVIO DE RECUPERAÇÃO");
+  console.log("PROVEDOR: RESEND");
+  console.log("DESTINATÁRIO:", email);
+  console.log("REMETENTE:", config.from);
+
+  const result = await resend.emails.send({
+    from: config.from,
     to: email,
     subject: "Recuperação de senha — Campo Limpo RP",
     text: [
@@ -138,6 +141,20 @@ async function sendPasswordResetEmail({ email, login, resetUrl }) {
       </div>
     `,
   });
+
+  if (result?.error) {
+    const error = new Error(
+      result.error.message || "Erro ao enviar e-mail pelo Resend."
+    );
+    error.code = result.error.name || result.error.statusCode;
+    error.response = result.error;
+    throw error;
+  }
+
+  console.log("E-MAIL ENVIADO COM SUCESSO PELO RESEND");
+  console.log("ID:", result?.data?.id);
+
+  return result?.data;
 }
 
 /**

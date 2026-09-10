@@ -23,6 +23,16 @@ type Category = {
   slug?: string;
 };
 
+type ProductDelivery = {
+  id?: string | number;
+  delivery_type: string;
+  delivery_value?: string | null;
+  delivery_amount?: number;
+  delivery_days?: number;
+  recipient_mode?: string;
+  sort_order?: number;
+};
+
 type Product = {
   id: string;
   name: string;
@@ -36,11 +46,29 @@ type Product = {
   active?: boolean | number;
   sort_order?: number;
   description?: string | null;
+
+  // Compatibilidade com o formato antigo (1 entrega por produto)
   delivery_type?: string | null;
   delivery_value?: string | null;
   delivery_amount?: number;
   delivery_days?: number;
+
+  // Novo formato (várias recompensas por produto)
+  deliveries?: ProductDelivery[];
+  product_deliveries?: ProductDelivery[];
+
+  // Continua no produto para limitar quantos IDs podem ser informados no VIP FAC
   vip_max_members?: number;
+};
+
+type DeliveryRewardForm = {
+  temp_id: string;
+  delivery_type: string;
+  delivery_value: string;
+  delivery_amount: number;
+  delivery_days: number;
+  recipient_mode: string;
+  sort_order: number;
 };
 
 type ProductForm = {
@@ -54,12 +82,19 @@ type ProductForm = {
   sort_order: number;
   description: string;
   existingImageUrl: string;
-  delivery_type: string;
-  delivery_value: string;
-  delivery_amount: number;
-  delivery_days: number;
   vip_max_members: number;
+  deliveries: DeliveryRewardForm[];
 };
+
+const createReward = (sortOrder = 0): DeliveryRewardForm => ({
+  temp_id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  delivery_type: "item",
+  delivery_value: "",
+  delivery_amount: 1,
+  delivery_days: 0,
+  recipient_mode: "buyer",
+  sort_order: sortOrder,
+});
 
 const emptyForm: ProductForm = {
   name: "",
@@ -72,11 +107,8 @@ const emptyForm: ProductForm = {
   sort_order: 0,
   description: "",
   existingImageUrl: "",
-  delivery_type: "none",
-  delivery_value: "",
-  delivery_amount: 1,
-  delivery_days: 0,
   vip_max_members: 0,
+  deliveries: [],
 };
 
 const getImageUrl = (imageUrl?: string | null) => {
@@ -278,6 +310,39 @@ const AdminProducts = () => {
   const openEditForm = (product: Product) => {
     setEditId(product.id);
 
+    const apiDeliveries =
+      product.deliveries ||
+      product.product_deliveries ||
+      [];
+
+    // Se o backend ainda devolver o modelo antigo, converte a entrega única
+    // para a nova lista de recompensas sem perder a configuração existente.
+    const normalizedDeliveries: DeliveryRewardForm[] =
+      apiDeliveries.length > 0
+        ? apiDeliveries.map((delivery, index) => ({
+            temp_id: String(delivery.id ?? `${Date.now()}-${index}`),
+            delivery_type: delivery.delivery_type || "item",
+            delivery_value: delivery.delivery_value ?? "",
+            delivery_amount: Number(delivery.delivery_amount ?? 1),
+            delivery_days: Number(delivery.delivery_days ?? 0),
+            recipient_mode: delivery.recipient_mode || "buyer",
+            sort_order: Number(delivery.sort_order ?? index),
+          }))
+        : product.delivery_type && product.delivery_type !== "none"
+        ? [
+            {
+              temp_id: `legacy-${product.id}`,
+              delivery_type: product.delivery_type,
+              delivery_value: product.delivery_value ?? "",
+              delivery_amount: Number(product.delivery_amount ?? 1),
+              delivery_days: Number(product.delivery_days ?? 0),
+              recipient_mode:
+                product.delivery_type === "vip_fac" ? "all_members" : "buyer",
+              sort_order: 0,
+            },
+          ]
+        : [];
+
     setForm({
       name: product.name ?? "",
       price: product.price != null ? String(product.price) : "",
@@ -289,16 +354,66 @@ const AdminProducts = () => {
       sort_order: product.sort_order ?? 0,
       description: product.description ?? "",
       existingImageUrl: product.image_url ?? "",
-      delivery_type: product.delivery_type ?? "none",
-      delivery_value: product.delivery_value ?? "",
-      delivery_amount: Number(product.delivery_amount ?? 1),
-      delivery_days: Number(product.delivery_days ?? 0),
       vip_max_members: Number(product.vip_max_members ?? 0),
+      deliveries: normalizedDeliveries,
     });
 
     setSelectedFile(null);
     setPreviewUrl(product.image_url ?? "");
     setShowForm(true);
+  };
+
+  const addReward = () => {
+    setForm((current) => ({
+      ...current,
+      deliveries: [
+        ...current.deliveries,
+        createReward(current.deliveries.length),
+      ],
+    }));
+  };
+
+  const updateReward = (
+    tempId: string,
+    patch: Partial<DeliveryRewardForm>
+  ) => {
+    setForm((current) => ({
+      ...current,
+      deliveries: current.deliveries.map((reward) =>
+        reward.temp_id === tempId ? { ...reward, ...patch } : reward
+      ),
+    }));
+  };
+
+  const removeReward = (tempId: string) => {
+    setForm((current) => ({
+      ...current,
+      deliveries: current.deliveries
+        .filter((reward) => reward.temp_id !== tempId)
+        .map((reward, index) => ({ ...reward, sort_order: index })),
+    }));
+  };
+
+  const hasFacReward = form.deliveries.some(
+    (reward) =>
+      reward.delivery_type === "vip_fac" ||
+      reward.recipient_mode === "all_members"
+  );
+
+  const getRewardValueLabel = (deliveryType: string) => {
+    if (deliveryType === "vehicle") return "Modelo do veículo";
+    if (deliveryType === "group" || deliveryType === "vip_fac") return "Grupo";
+    if (deliveryType === "coins") return "Código / moeda";
+    return "Spawn / código do item";
+  };
+
+  const getRewardValuePlaceholder = (deliveryType: string) => {
+    if (deliveryType === "vehicle") return "Ex: sultanrs";
+    if (deliveryType === "group" || deliveryType === "vip_fac") {
+      return "Ex: vipfacouro";
+    }
+    if (deliveryType === "coins") return "Ex: cash";
+    return "Ex: dirtymoney";
   };
 
   const handleFileChange = (file: File | null) => {
@@ -340,11 +455,37 @@ const AdminProducts = () => {
       body.append("active", String(form.active));
       body.append("sort_order", String(Number(form.sort_order) || 0));
       body.append("description", form.description.trim());
-      body.append("delivery_type", form.delivery_type);
-      body.append("delivery_value", form.delivery_value.trim());
-      body.append("delivery_amount", String(Number(form.delivery_amount) || 1));
-      body.append("delivery_days", String(Number(form.delivery_days) || 0));
       body.append("vip_max_members", String(Number(form.vip_max_members) || 0));
+
+      const normalizedDeliveries = form.deliveries.map((reward, index) => ({
+        delivery_type: reward.delivery_type,
+        delivery_value: reward.delivery_value.trim(),
+        delivery_amount: Math.max(1, Number(reward.delivery_amount) || 1),
+        delivery_days: Math.max(0, Number(reward.delivery_days) || 0),
+        recipient_mode: reward.recipient_mode || "buyer",
+        sort_order: index,
+      }));
+
+      for (const reward of normalizedDeliveries) {
+        if (!reward.delivery_value) {
+          throw new Error("Preencha o código/grupo/modelo de todas as recompensas.");
+        }
+      }
+
+      if (hasFacReward && Number(form.vip_max_members) <= 0) {
+        throw new Error("Informe o máximo de membros para o VIP FAC.");
+      }
+
+      // Novo formato: o backend vai salvar esta lista em product_deliveries.
+      body.append("deliveries", JSON.stringify(normalizedDeliveries));
+
+      // Compatibilidade temporária com o backend anterior enquanto vamos
+      // alterando os arquivos por etapas. Ele recebe a primeira recompensa.
+      const firstReward = normalizedDeliveries[0];
+      body.append("delivery_type", firstReward?.delivery_type || "none");
+      body.append("delivery_value", firstReward?.delivery_value || "");
+      body.append("delivery_amount", String(firstReward?.delivery_amount || 1));
+      body.append("delivery_days", String(firstReward?.delivery_days || 0));
 
       body.append("keep_image", selectedFile ? "false" : "true");
 
@@ -544,14 +685,211 @@ const AdminProducts = () => {
             </div>
 
             <div className="md:col-span-2 xl:col-span-3 rounded-xl border border-red-500/20 bg-red-500/5 p-4">
-              <h4 className="mb-4 font-semibold text-white">Entrega automática na cidade</h4>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                <div><label className="mb-2 block text-sm text-zinc-300">Tipo</label><select value={form.delivery_type} onChange={(e)=>setForm({...form,delivery_type:e.target.value})} className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white"><option value="none">Sem entrega</option><option value="item">Item</option><option value="vehicle">Veículo</option><option value="group">VIP / Grupo individual</option><option value="vip_fac">VIP FAC</option><option value="coins">Coins / Dinheiro</option></select></div>
-                <div><label className="mb-2 block text-sm text-zinc-300">{form.delivery_type === "vehicle" ? "Modelo" : form.delivery_type === "item" ? "Spawn do item" : "Grupo / código"}</label><input value={form.delivery_value} onChange={(e)=>setForm({...form,delivery_value:e.target.value})} placeholder="Ex: vipfac / repairkit / sultan" className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white" /></div>
-                <div><label className="mb-2 block text-sm text-zinc-300">Quantidade</label><input type="number" min="1" value={form.delivery_amount} onChange={(e)=>setForm({...form,delivery_amount:Number(e.target.value)||1})} className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white" /></div>
-                <div><label className="mb-2 block text-sm text-zinc-300">Dias (0 permanente)</label><input type="number" min="0" value={form.delivery_days} onChange={(e)=>setForm({...form,delivery_days:Number(e.target.value)||0})} className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white" /></div>
-                {form.delivery_type === "vip_fac" && <div><label className="mb-2 block text-sm text-zinc-300">Máx. membros</label><input type="number" min="1" value={form.vip_max_members} onChange={(e)=>setForm({...form,vip_max_members:Number(e.target.value)||1})} className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white" /></div>}
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h4 className="font-semibold text-white">
+                    Entrega automática na cidade
+                  </h4>
+                  <p className="mt-1 text-xs text-zinc-400">
+                    Adicione tudo que este produto deve entregar após o pagamento.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={addReward}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-500"
+                >
+                  <Plus className="h-4 w-4" />
+                  Adicionar recompensa
+                </button>
               </div>
+
+              {form.deliveries.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-white/10 bg-zinc-950/70 p-5 text-center">
+                  <Package className="mx-auto mb-2 h-7 w-7 text-zinc-600" />
+                  <p className="text-sm text-zinc-400">
+                    Nenhuma recompensa cadastrada.
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-600">
+                    O produto será apenas comercial até você adicionar uma recompensa.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {form.deliveries.map((reward, index) => (
+                    <div
+                      key={reward.temp_id}
+                      className="rounded-xl border border-white/10 bg-zinc-950/80 p-4"
+                    >
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">
+                            Recompensa {index + 1}
+                          </p>
+                          <p className="text-xs text-zinc-500">
+                            Configure o benefício e quem deve recebê-lo.
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeReward(reward.temp_id)}
+                          className="inline-flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400 transition hover:bg-red-500/20"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Remover
+                        </button>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                        <div>
+                          <label className="mb-2 block text-sm text-zinc-300">
+                            Tipo
+                          </label>
+                          <select
+                            value={reward.delivery_type}
+                            onChange={(e) => {
+                              const nextType = e.target.value;
+                              updateReward(reward.temp_id, {
+                                delivery_type: nextType,
+                                recipient_mode:
+                                  nextType === "vip_fac"
+                                    ? "all_members"
+                                    : reward.recipient_mode,
+                              });
+                            }}
+                            className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500"
+                          >
+                            <option value="item">Item</option>
+                            <option value="vehicle">Veículo</option>
+                            <option value="group">VIP / Grupo individual</option>
+                            <option value="vip_fac">VIP FAC / Grupo da facção</option>
+                            <option value="coins">Coins / Dinheiro</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm text-zinc-300">
+                            {getRewardValueLabel(reward.delivery_type)}
+                          </label>
+                          <input
+                            value={reward.delivery_value}
+                            onChange={(e) =>
+                              updateReward(reward.temp_id, {
+                                delivery_value: e.target.value,
+                              })
+                            }
+                            placeholder={getRewardValuePlaceholder(
+                              reward.delivery_type
+                            )}
+                            className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm text-zinc-300">
+                            Quantidade
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={reward.delivery_amount}
+                            onChange={(e) =>
+                              updateReward(reward.temp_id, {
+                                delivery_amount: Math.max(
+                                  1,
+                                  Number(e.target.value) || 1
+                                ),
+                              })
+                            }
+                            disabled={
+                              reward.delivery_type === "group" ||
+                              reward.delivery_type === "vip_fac" ||
+                              reward.delivery_type === "vehicle"
+                            }
+                            className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm text-zinc-300">
+                            Dias (0 = permanente)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={reward.delivery_days}
+                            onChange={(e) =>
+                              updateReward(reward.temp_id, {
+                                delivery_days: Math.max(
+                                  0,
+                                  Number(e.target.value) || 0
+                                ),
+                              })
+                            }
+                            disabled={
+                              reward.delivery_type === "item" ||
+                              reward.delivery_type === "coins"
+                            }
+                            className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm text-zinc-300">
+                            Quem recebe
+                          </label>
+                          <select
+                            value={reward.recipient_mode}
+                            onChange={(e) =>
+                              updateReward(reward.temp_id, {
+                                recipient_mode: e.target.value,
+                              })
+                            }
+                            className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500"
+                          >
+                            <option value="buyer">
+                              Responsável / ID principal
+                            </option>
+                            <option value="all_members">
+                              Todos os membros informados
+                            </option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {hasFacReward && (
+                <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                  <label className="mb-2 block text-sm font-medium text-zinc-200">
+                    Máximo de membros que o comprador poderá informar
+                  </label>
+                  <div className="max-w-xs">
+                    <input
+                      type="number"
+                      min="1"
+                      value={form.vip_max_members}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          vip_max_members: Math.max(
+                            1,
+                            Number(e.target.value) || 1
+                          ),
+                        })
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-amber-500"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Esse limite será usado no checkout quando houver recompensa destinada a todos os membros.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="md:col-span-2 xl:col-span-3">

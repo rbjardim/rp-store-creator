@@ -38,6 +38,11 @@ router.get("/", async (req, res) => {
         p.active,
         p.sort_order,
         p.description,
+        p.delivery_type,
+        p.delivery_value,
+        p.delivery_amount,
+        p.delivery_days,
+        p.vip_max_members,
         c.name AS category_name,
         CASE
           WHEN p.image_data IS NOT NULL THEN CONCAT('/api/products/', p.id, '/image')
@@ -99,6 +104,11 @@ router.post("/", authRequired, adminOnly, upload.single("image"), async (req, re
       active,
       sort_order,
       description,
+      delivery_type,
+      delivery_value,
+      delivery_amount,
+      delivery_days,
+      vip_max_members,
     } = req.body;
 
     if (!name || !price) {
@@ -127,9 +137,14 @@ router.post("/", authRequired, adminOnly, upload.single("image"), async (req, re
         image_mime_type,
         active,
         sort_order,
-        description
+        description,
+        delivery_type,
+        delivery_value,
+        delivery_amount,
+        delivery_days,
+        vip_max_members
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         id,
@@ -145,6 +160,11 @@ router.post("/", authRequired, adminOnly, upload.single("image"), async (req, re
         activeValue,
         sort_order ? Number(sort_order) : 0,
         description || null,
+        delivery_type || "none",
+        delivery_value || null,
+        delivery_amount ? Number(delivery_amount) : 1,
+        delivery_days ? Number(delivery_days) : 0,
+        vip_max_members ? Number(vip_max_members) : 0,
       ]
     );
 
@@ -174,6 +194,11 @@ router.put("/:id", authRequired, adminOnly, upload.single("image"), async (req, 
       active,
       sort_order,
       description,
+      delivery_type,
+      delivery_value,
+      delivery_amount,
+      delivery_days,
+      vip_max_members,
     } = req.body;
 
     if (!name || !price) {
@@ -196,6 +221,11 @@ router.put("/:id", authRequired, adminOnly, upload.single("image"), async (req, 
       activeValue,
       sort_order ? Number(sort_order) : 0,
       description || null,
+      delivery_type || "none",
+      delivery_value || null,
+      delivery_amount ? Number(delivery_amount) : 1,
+      delivery_days ? Number(delivery_days) : 0,
+      vip_max_members ? Number(vip_max_members) : 0,
     ];
 
     if (req.file) {
@@ -217,7 +247,12 @@ router.put("/:id", authRequired, adminOnly, upload.single("image"), async (req, 
         category_id = ?,
         active = ?,
         sort_order = ?,
-        description = ?
+        description = ?,
+        delivery_type = ?,
+        delivery_value = ?,
+        delivery_amount = ?,
+        delivery_days = ?,
+        vip_max_members = ?
         ${imageSql}
       WHERE id = ?
       `,

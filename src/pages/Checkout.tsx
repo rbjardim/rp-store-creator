@@ -13,6 +13,7 @@ const Checkout = () => {
   const [coupon, setCoupon] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [vipRecipients, setVipRecipients] = useState<Record<string, string[]>>({});
 
   const formatPrice = (v: number) =>
     v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -26,6 +27,7 @@ const Checkout = () => {
         customerEmail,
         characterId,
         coupon,
+        vipRecipients,
       })
     );
   };
@@ -42,6 +44,7 @@ const Checkout = () => {
         setCustomerEmail(data.customerEmail || "");
         setCharacterId(data.characterId || "");
         setCoupon(data.coupon || "");
+        setVipRecipients(data.vipRecipients || {});
       } catch {
         localStorage.removeItem("checkout_form");
       }
@@ -121,6 +124,14 @@ const Checkout = () => {
     if (!characterId) return alert("Informe o ID do personagem");
     if (!discordUser) return alert("Conecte seu Discord");
 
+    for (const item of items.filter((i) => i.delivery_type === "vip_fac")) {
+      const ids = (vipRecipients[item.id] || []).map(v => v.trim()).filter(Boolean);
+      const max = Math.max(1, Number(item.vip_max_members || 1)) * item.quantity;
+      if (!ids.length) return alert(`Informe pelo menos um ID para ${item.name}`);
+      if (ids.length > max) return alert(`${item.name} permite no máximo ${max} ID(s)`);
+      if (new Set(ids).size !== ids.length || ids.some(id => !/^\d+$/.test(id))) return alert(`${item.name}: remova IDs inválidos ou repetidos`);
+    }
+
     try {
       setLoading(true);
 
@@ -130,12 +141,8 @@ const Checkout = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          items: items.map((i) => ({
-            name: i.name,
-            price: i.price,
-            quantity: i.quantity,
-            image_url: i.image_url,
-          })),
+          items: items.map((i) => ({ id: i.id, quantity: i.quantity })),
+          vipRecipients,
           couponCode: coupon || null,
           customer: {
             name: customerName,
@@ -240,6 +247,19 @@ const Checkout = () => {
                   ))}
                 </div>
               </div>
+
+              {items.filter((item) => item.delivery_type === "vip_fac").map((item) => {
+                const max = Math.max(1, Number(item.vip_max_members || 1)) * item.quantity;
+                const current = vipRecipients[item.id] || [""];
+                return <div key={`vip-${item.id}`} className="rounded-xl border border-border bg-background p-4">
+                  <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">IDs do VIP FAC — {item.name}</h2>
+                  <p className="mb-3 text-xs text-muted-foreground">Informe os IDs da cidade que receberão o VIP. Limite deste pedido: {max} membro(s).</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {current.map((value,index)=><div key={index} className="flex gap-2"><input value={value} onChange={(e)=>{const next=[...current];next[index]=e.target.value.replace(/\D/g,"");setVipRecipients({...vipRecipients,[item.id]:next})}} placeholder={`ID ${index+1}`} className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm" />{current.length>1 && <button type="button" onClick={()=>setVipRecipients({...vipRecipients,[item.id]:current.filter((_,i)=>i!==index)})} className="rounded-md border border-border px-3">×</button>}</div>)}
+                  </div>
+                  {current.length < max && <button type="button" onClick={()=>setVipRecipients({...vipRecipients,[item.id]:[...current,""]})} className="mt-3 rounded-md bg-secondary px-4 py-2 text-sm font-semibold">+ Adicionar ID</button>}
+                </div>
+              })}
 
               <div className="rounded-xl border border-border bg-background p-4">
                 <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">

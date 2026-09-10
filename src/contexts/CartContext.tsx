@@ -12,6 +12,8 @@ export type CartItem = {
   price: number;
   image_url: string | null;
   quantity: number;
+  delivery_type?: string;
+  vip_max_members?: number;
 };
 
 type CartContextType = {

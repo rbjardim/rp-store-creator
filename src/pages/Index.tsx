@@ -20,6 +20,8 @@ type Product = {
   category_id?: string | null;
   tag: string;
   active: number;
+  delivery_type?: string;
+  vip_max_members?: number;
 };
 
 type Category = {
@@ -62,6 +64,8 @@ const Index = () => {
           category_id: item.category_id ?? null,
           tag: item.tag ?? "",
           active: Number(item.active ?? 0),
+          delivery_type: item.delivery_type ?? "none",
+          vip_max_members: Number(item.vip_max_members ?? 0),
         }))
         .filter((item) => item.active === 1);
     },

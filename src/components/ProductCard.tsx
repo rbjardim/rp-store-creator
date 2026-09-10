@@ -13,6 +13,8 @@ type Props = {
     discount: number | null;
     image_url: string | null;
     tag: string | null;
+    delivery_type?: string;
+    vip_max_members?: number;
   };
 };
 
@@ -45,6 +47,8 @@ const ProductCard = ({ product }: Props) => {
       name: product.name,
       price: product.price,
       image_url: imageSrc,
+      delivery_type: product.delivery_type || "none",
+      vip_max_members: Number(product.vip_max_members || 0),
     });
   };
 

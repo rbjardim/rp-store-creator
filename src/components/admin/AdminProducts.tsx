@@ -36,6 +36,11 @@ type Product = {
   active?: boolean | number;
   sort_order?: number;
   description?: string | null;
+  delivery_type?: string | null;
+  delivery_value?: string | null;
+  delivery_amount?: number;
+  delivery_days?: number;
+  vip_max_members?: number;
 };
 
 type ProductForm = {
@@ -49,6 +54,11 @@ type ProductForm = {
   sort_order: number;
   description: string;
   existingImageUrl: string;
+  delivery_type: string;
+  delivery_value: string;
+  delivery_amount: number;
+  delivery_days: number;
+  vip_max_members: number;
 };
 
 const emptyForm: ProductForm = {
@@ -62,6 +72,11 @@ const emptyForm: ProductForm = {
   sort_order: 0,
   description: "",
   existingImageUrl: "",
+  delivery_type: "none",
+  delivery_value: "",
+  delivery_amount: 1,
+  delivery_days: 0,
+  vip_max_members: 0,
 };
 
 const getImageUrl = (imageUrl?: string | null) => {
@@ -274,6 +289,11 @@ const AdminProducts = () => {
       sort_order: product.sort_order ?? 0,
       description: product.description ?? "",
       existingImageUrl: product.image_url ?? "",
+      delivery_type: product.delivery_type ?? "none",
+      delivery_value: product.delivery_value ?? "",
+      delivery_amount: Number(product.delivery_amount ?? 1),
+      delivery_days: Number(product.delivery_days ?? 0),
+      vip_max_members: Number(product.vip_max_members ?? 0),
     });
 
     setSelectedFile(null);
@@ -320,6 +340,11 @@ const AdminProducts = () => {
       body.append("active", String(form.active));
       body.append("sort_order", String(Number(form.sort_order) || 0));
       body.append("description", form.description.trim());
+      body.append("delivery_type", form.delivery_type);
+      body.append("delivery_value", form.delivery_value.trim());
+      body.append("delivery_amount", String(Number(form.delivery_amount) || 1));
+      body.append("delivery_days", String(Number(form.delivery_days) || 0));
+      body.append("vip_max_members", String(Number(form.vip_max_members) || 0));
 
       body.append("keep_image", selectedFile ? "false" : "true");
 
@@ -516,6 +541,17 @@ const AdminProducts = () => {
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="md:col-span-2 xl:col-span-3 rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+              <h4 className="mb-4 font-semibold text-white">Entrega automática na cidade</h4>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <div><label className="mb-2 block text-sm text-zinc-300">Tipo</label><select value={form.delivery_type} onChange={(e)=>setForm({...form,delivery_type:e.target.value})} className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white"><option value="none">Sem entrega</option><option value="item">Item</option><option value="vehicle">Veículo</option><option value="group">VIP / Grupo individual</option><option value="vip_fac">VIP FAC</option><option value="coins">Coins / Dinheiro</option></select></div>
+                <div><label className="mb-2 block text-sm text-zinc-300">{form.delivery_type === "vehicle" ? "Modelo" : form.delivery_type === "item" ? "Spawn do item" : "Grupo / código"}</label><input value={form.delivery_value} onChange={(e)=>setForm({...form,delivery_value:e.target.value})} placeholder="Ex: vipfac / repairkit / sultan" className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white" /></div>
+                <div><label className="mb-2 block text-sm text-zinc-300">Quantidade</label><input type="number" min="1" value={form.delivery_amount} onChange={(e)=>setForm({...form,delivery_amount:Number(e.target.value)||1})} className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white" /></div>
+                <div><label className="mb-2 block text-sm text-zinc-300">Dias (0 permanente)</label><input type="number" min="0" value={form.delivery_days} onChange={(e)=>setForm({...form,delivery_days:Number(e.target.value)||0})} className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white" /></div>
+                {form.delivery_type === "vip_fac" && <div><label className="mb-2 block text-sm text-zinc-300">Máx. membros</label><input type="number" min="1" value={form.vip_max_members} onChange={(e)=>setForm({...form,vip_max_members:Number(e.target.value)||1})} className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white" /></div>}
+              </div>
             </div>
 
             <div className="md:col-span-2 xl:col-span-3">

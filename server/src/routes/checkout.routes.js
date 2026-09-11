@@ -406,14 +406,24 @@ router.post("/create-preference", async (req, res) => {
 
     const preference = new mercadopago.Preference(client);
 
+    // O Mercado Pago calcula o valor final pela soma dos itens enviados.
+    // Como o cupom já foi calculado em `totalAmount`, refletimos esse valor
+    // diretamente na preferência para o checkout abrir com o desconto correto.
+    const mercadoPagoItems = [
+      {
+        title:
+          normalizedItems.length === 1
+            ? normalizedItems[0].title
+            : `Pedido Campo Limpo RP - ${normalizedItems.length} produto(s)`,
+        quantity: 1,
+        currency_id: "BRL",
+        unit_price: totalAmount,
+      },
+    ];
+
     const result = await preference.create({
       body: {
-        items: normalizedItems.map((i) => ({
-          title: i.title,
-          quantity: i.quantity,
-          currency_id: "BRL",
-          unit_price: i.unit_price,
-        })),
+        items: mercadoPagoItems,
         external_reference: String(orderId),
         notification_url:
           "https://api.campolimporp.com.br/api/checkout/webhook",

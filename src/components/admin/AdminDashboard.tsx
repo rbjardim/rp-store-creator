@@ -374,14 +374,14 @@ const AdminDashboard = () => {
       value: formatMoney(totals.total_payments),
       description: "Somente pedidos pagos",
       icon: DollarSign,
-      accent: "red" as const,
+      accent: "green" as const,
     },
     {
       title: "Vendas de hoje",
       value: formatMoney(totals.sales_today),
       description: "Total recebido hoje",
       icon: TrendingUp,
-      accent: "red" as const,
+      accent: "green" as const,
     },
     {
       title: "Cupons utilizados",
@@ -437,150 +437,42 @@ const AdminDashboard = () => {
                   : "border-white/10"
               }`}
             >
-              <div className="flex min-w-0 items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-medium uppercase leading-5 tracking-wide text-zinc-500">
+              <div className="min-w-0">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 text-xs font-medium uppercase leading-5 tracking-wide text-zinc-500">
                     {card.title}
                   </p>
 
-                  <p
-                    className={`mt-3 break-words text-2xl font-bold leading-tight ${
-                      isGreen ? "text-emerald-400" : "text-white"
+                  <div
+                    className={`shrink-0 rounded-xl border p-3 ${
+                      isGreen
+                        ? "border-emerald-500/25 bg-emerald-500/10"
+                        : "border-red-500/20 bg-red-500/10"
                     }`}
                   >
-                    {card.value}
-                  </p>
-
-                  <p className="mt-2 text-xs leading-5 text-zinc-500">
-                    {card.description}
-                  </p>
+                    <Icon
+                      className={`h-5 w-5 ${
+                        isGreen ? "text-emerald-400" : "text-red-400"
+                      }`}
+                    />
+                  </div>
                 </div>
 
-                <div
-                  className={`shrink-0 rounded-xl border p-3 ${
-                    isGreen
-                      ? "border-emerald-500/25 bg-emerald-500/10"
-                      : "border-red-500/20 bg-red-500/10"
+                <p
+                  className={`mt-3 whitespace-nowrap text-xl font-bold leading-tight tracking-tight 2xl:text-2xl ${
+                    isGreen ? "text-emerald-400" : "text-white"
                   }`}
                 >
-                  <Icon
-                    className={`h-5 w-5 ${
-                      isGreen ? "text-emerald-400" : "text-red-400"
-                    }`}
-                  />
-                </div>
+                  {card.value}
+                </p>
+
+                <p className="mt-2 text-xs leading-5 text-zinc-500">
+                  {card.description}
+                </p>
               </div>
             </div>
           );
         })}
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
-          <div className="mb-5">
-            <h3 className="flex items-center gap-2 text-lg font-bold text-white">
-              <Tag className="h-5 w-5 text-red-400" />
-              Pagamentos com cupom
-            </h3>
-
-            <p className="mt-1 text-sm text-zinc-400">
-              Últimos pedidos pagos que utilizaram cupom.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            {paidOrdersWithCoupons.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/10 bg-zinc-950 p-6 text-center text-sm text-zinc-500">
-                Nenhum pagamento com cupom encontrado.
-              </div>
-            ) : (
-              paidOrdersWithCoupons.map((order) => (
-                <div
-                  key={String(order.id)}
-                  className="flex flex-col gap-3 rounded-xl border border-white/10 bg-zinc-950 p-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-white">
-                      Pedido #{order.order_number || order.id}
-                    </p>
-
-                    <p className="mt-1 text-xs text-zinc-500">
-                      {order.customer_name || order.customer_email || "Cliente não informado"}
-                    </p>
-
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span className="rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-400">
-                        {order.coupon_code}
-                      </span>
-
-                      <span className="text-xs text-zinc-500">
-                        Desconto: {formatMoney(order.discount_amount)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="sm:text-right">
-                    <p className="text-sm font-bold text-white">
-                      {formatMoney(order.paid_amount ?? order.total)}
-                    </p>
-
-                    <p className="mt-1 text-xs text-zinc-500">
-                      {formatDate(order.paid_at || order.created_at)}
-                    </p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
-          <div className="mb-5">
-            <h3 className="flex items-center gap-2 text-lg font-bold text-white">
-              <CalendarClock className="h-5 w-5 text-amber-400" />
-              Próximos vencimentos
-            </h3>
-
-            <p className="mt-1 text-sm text-zinc-400">
-              Pedidos ainda não pagos ordenados pela data de expiração.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            {expiringOrders.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/10 bg-zinc-950 p-6 text-center text-sm text-zinc-500">
-                Nenhum pedido aguardando expiração.
-              </div>
-            ) : (
-              expiringOrders.map((order) => (
-                <div
-                  key={String(order.id)}
-                  className="flex flex-col gap-3 rounded-xl border border-white/10 bg-zinc-950 p-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      Pedido #{order.order_number || order.id}
-                    </p>
-
-                    <p className="mt-1 text-xs text-zinc-500">
-                      {order.customer_name || order.customer_email || "Cliente não informado"}
-                    </p>
-                  </div>
-
-                  <div className="sm:text-right">
-                    <p className="text-xs font-medium text-amber-400">
-                      Expira em
-                    </p>
-
-                    <p className="mt-1 text-sm text-white">
-                      {formatDate(order.expires_at)}
-                    </p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
@@ -806,6 +698,115 @@ const AdminDashboard = () => {
           </span>
         </div>
       </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
+          <div className="mb-5">
+            <h3 className="flex items-center gap-2 text-lg font-bold text-white">
+              <Tag className="h-5 w-5 text-red-400" />
+              Pagamentos com cupom
+            </h3>
+
+            <p className="mt-1 text-sm text-zinc-400">
+              Últimos pedidos pagos que utilizaram cupom.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {paidOrdersWithCoupons.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/10 bg-zinc-950 p-6 text-center text-sm text-zinc-500">
+                Nenhum pagamento com cupom encontrado.
+              </div>
+            ) : (
+              paidOrdersWithCoupons.map((order) => (
+                <div
+                  key={String(order.id)}
+                  className="flex flex-col gap-3 rounded-xl border border-white/10 bg-zinc-950 p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">
+                      Pedido #{order.order_number || order.id}
+                    </p>
+
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {order.customer_name || order.customer_email || "Cliente não informado"}
+                    </p>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-400">
+                        {order.coupon_code}
+                      </span>
+
+                      <span className="text-xs text-zinc-500">
+                        Desconto: {formatMoney(order.discount_amount)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="sm:text-right">
+                    <p className="text-sm font-bold text-white">
+                      {formatMoney(order.paid_amount ?? order.total)}
+                    </p>
+
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {formatDate(order.paid_at || order.created_at)}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
+          <div className="mb-5">
+            <h3 className="flex items-center gap-2 text-lg font-bold text-white">
+              <CalendarClock className="h-5 w-5 text-amber-400" />
+              Próximos vencimentos
+            </h3>
+
+            <p className="mt-1 text-sm text-zinc-400">
+              Pedidos ainda não pagos ordenados pela data de expiração.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {expiringOrders.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/10 bg-zinc-950 p-6 text-center text-sm text-zinc-500">
+                Nenhum pedido aguardando expiração.
+              </div>
+            ) : (
+              expiringOrders.map((order) => (
+                <div
+                  key={String(order.id)}
+                  className="flex flex-col gap-3 rounded-xl border border-white/10 bg-zinc-950 p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      Pedido #{order.order_number || order.id}
+                    </p>
+
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {order.customer_name || order.customer_email || "Cliente não informado"}
+                    </p>
+                  </div>
+
+                  <div className="sm:text-right">
+                    <p className="text-xs font-medium text-amber-400">
+                      Expira em
+                    </p>
+
+                    <p className="mt-1 text-sm text-white">
+                      {formatDate(order.expires_at)}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 };

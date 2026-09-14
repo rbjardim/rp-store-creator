@@ -2,19 +2,37 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+
+import AdminDashboard from "@/components/admin/AdminDashboard";
 import AdminCategories from "@/components/admin/AdminCategories";
 import AdminProducts from "@/components/admin/AdminProducts";
 import AdminSettings from "@/components/admin/AdminSettings";
 import AdminUsers from "@/components/admin/AdminUsers";
 import AdminCoupons from "@/components/admin/AdminCoupons";
-import { LogOut, Settings, Package, FolderOpen, Users } from "lucide-react";
 
-type Tab = "products" | "categories" | "users" | "coupons" | "settings";
+import {
+  LayoutDashboard,
+  LogOut,
+  Settings,
+  Package,
+  FolderOpen,
+  Users,
+  TicketPercent,
+} from "lucide-react";
+
+type Tab =
+  | "dashboard"
+  | "products"
+  | "categories"
+  | "users"
+  | "coupons"
+  | "settings";
 
 const AdminPanel = () => {
   const { user, isAdmin, loading, signOut } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<Tab>("products");
+
+  const [activeTab, setActiveTab] = useState<Tab>("dashboard");
 
   useEffect(() => {
     if (!loading && (!user || !isAdmin)) {
@@ -32,12 +50,41 @@ const AdminPanel = () => {
 
   if (!user || !isAdmin) return null;
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: "products", label: "Produtos", icon: <Package className="h-4 w-4" /> },
-    { id: "categories", label: "Categorias", icon: <FolderOpen className="h-4 w-4" /> },
-    { id: "users", label: "Usuários", icon: <Users className="h-4 w-4" /> },
-    { id: "coupons", label: "Cupons", icon: <Settings className="h-4 w-4" /> },
-    { id: "settings", label: "Configurações", icon: <Settings className="h-4 w-4" /> },
+  const tabs: {
+    id: Tab;
+    label: string;
+    icon: React.ReactNode;
+  }[] = [
+    {
+      id: "dashboard",
+      label: "Dashboard",
+      icon: <LayoutDashboard className="h-4 w-4" />,
+    },
+    {
+      id: "products",
+      label: "Produtos",
+      icon: <Package className="h-4 w-4" />,
+    },
+    {
+      id: "categories",
+      label: "Categorias",
+      icon: <FolderOpen className="h-4 w-4" />,
+    },
+    {
+      id: "users",
+      label: "Usuários",
+      icon: <Users className="h-4 w-4" />,
+    },
+    {
+      id: "coupons",
+      label: "Cupons",
+      icon: <TicketPercent className="h-4 w-4" />,
+    },
+    {
+      id: "settings",
+      label: "Configurações",
+      icon: <Settings className="h-4 w-4" />,
+    },
   ];
 
   return (
@@ -45,7 +92,10 @@ const AdminPanel = () => {
       {/* Header */}
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <h1 className="font-display text-2xl text-foreground">Painel Admin</h1>
+          <h1 className="font-display text-2xl text-foreground">
+            Painel Admin
+          </h1>
+
           <div className="flex items-center gap-3">
             <button
               onClick={() => navigate("/")}
@@ -53,6 +103,7 @@ const AdminPanel = () => {
             >
               Ver Loja
             </button>
+
             <button
               onClick={signOut}
               className="flex items-center gap-1.5 rounded-md bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground hover:opacity-90"
@@ -66,12 +117,12 @@ const AdminPanel = () => {
 
       {/* Tabs */}
       <div className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-6xl gap-0 px-4">
+        <div className="mx-auto flex max-w-6xl gap-0 overflow-x-auto px-4">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
+              className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
                 activeTab === tab.id
                   ? "border-primary text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground"
@@ -86,6 +137,7 @@ const AdminPanel = () => {
 
       {/* Content */}
       <div className="mx-auto max-w-6xl px-4 py-6">
+        {activeTab === "dashboard" && <AdminDashboard />}
         {activeTab === "products" && <AdminProducts />}
         {activeTab === "categories" && <AdminCategories />}
         {activeTab === "users" && <AdminUsers />}

@@ -344,8 +344,8 @@ router.post("/create-preference", async (req, res) => {
 
     const [orderResult] = await connection.execute(
       `INSERT INTO orders
-       (customer_name,customer_email,character_id,discord_id,discord_username,total_amount,status,coupon_code,discount_percent,discount_amount,subtotal_amount)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+       (customer_name,customer_email,character_id,discord_id,discord_username,total_amount,status,coupon_code,discount_percent,discount_amount,subtotal_amount,expires_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?, DATE_ADD(NOW(), INTERVAL 24 HOUR))`,
       [
         customerName,
         customerEmail,
@@ -526,9 +526,20 @@ router.post("/webhook", async (req, res) => {
 
     await connection.execute(
       `UPDATE orders
-       SET status = ?, payment_id = ?
+       SET
+         status = ?,
+         payment_id = ?,
+         paid_at = NOW(),
+         payment_method = ?
        WHERE id = ?`,
-      ["paid", String(payment.id), orderId]
+      [
+        "paid",
+        String(payment.id),
+        payment.payment_method_id ||
+          payment.payment_type_id ||
+          "Não informado",
+        orderId,
+      ]
     );
 
     const productIds = [

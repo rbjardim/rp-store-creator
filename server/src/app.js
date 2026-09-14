@@ -15,6 +15,7 @@ const couponsRoutes = require("./routes/coupons.routes");
 const checkoutRoutes = require("./routes/checkout.routes");
 const discordRoutes = require("./routes/discord.routes");
 const deliveriesRoutes = require("./routes/deliveries.routes");
+const dashboardRoutes = require("./routes/dashboard.routes");
 
 console.log("Iniciando app.js...");
 console.log("JWT_SECRET configurado:", !!process.env.JWT_SECRET);
@@ -120,6 +121,7 @@ app.use("/api/coupons", couponsRoutes);
 app.use("/api/checkout", checkoutRoutes);
 app.use("/api/discord", discordRoutes);
 app.use("/api/deliveries", deliveriesRoutes);
+app.use("/api/admin/dashboard", dashboardRoutes);
 
 /*
 |--------------------------------------------------------------------------

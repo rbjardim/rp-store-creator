@@ -5,9 +5,19 @@ const router = express.Router();
 function authorized(req, res, next) {
   const expected = process.env.GAME_DELIVERY_SECRET;
   const provided = req.headers["x-delivery-secret"];
+
+  console.log("[DELIVERY AUTH]", {
+    expectedConfigured: !!expected,
+    providedConfigured: !!provided,
+    expectedLength: expected ? expected.length : 0,
+    providedLength: provided ? provided.length : 0,
+    sameSecret: expected === provided,
+  });
+
   if (!expected || provided !== expected) {
     return res.status(401).json({ message: "Não autorizado." });
   }
+
   next();
 }
 

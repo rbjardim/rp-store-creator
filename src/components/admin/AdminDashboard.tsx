@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 import {
   BadgeDollarSign,
   CalendarClock,
+  ChevronDown,
   CheckCircle2,
   Clock3,
   CreditCard,
@@ -15,6 +16,87 @@ import {
   Tag,
   TrendingUp,
 } from "lucide-react";
+
+
+
+type FilterOption = {
+  value: string;
+  label: string;
+};
+
+type FilterSelectProps = {
+  value: string;
+  options: FilterOption[];
+  onChange: (value: string) => void;
+};
+
+const FilterSelect = ({ value, options, onChange }: FilterSelectProps) => {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selected = options.find((option) => option.value === value) || options[0];
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative w-full min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className={`flex w-full items-center justify-between gap-3 rounded-xl border bg-zinc-950 px-4 py-3 text-left text-sm text-white outline-none transition ${
+          open
+            ? "border-red-500"
+            : "border-white/10 hover:border-white/20"
+        }`}
+      >
+        <span className="truncate">{selected.label}</span>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 overflow-hidden rounded-xl border border-white/10 bg-zinc-950 p-1 shadow-2xl">
+          {options.map((option) => {
+            const active = option.value === value;
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center rounded-lg px-3 py-2.5 text-left text-sm transition ${
+                  active
+                    ? "bg-red-500/15 font-semibold text-red-400"
+                    : "text-zinc-300 hover:bg-white/5 hover:text-white"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 type DashboardOrder = {
   id: string | number;
@@ -278,36 +360,42 @@ const AdminDashboard = () => {
       value: String(totals.orders),
       description: "Total de pedidos criados",
       icon: ShoppingCart,
+      accent: "red" as const,
     },
     {
       title: "Pedidos pagos",
       value: String(totals.paid_orders),
       description: "Pagamentos aprovados",
       icon: CheckCircle2,
+      accent: "green" as const,
     },
     {
       title: "Valor total recebido",
       value: formatMoney(totals.total_payments),
       description: "Somente pedidos pagos",
       icon: DollarSign,
+      accent: "red" as const,
     },
     {
       title: "Vendas de hoje",
       value: formatMoney(totals.sales_today),
       description: "Total recebido hoje",
       icon: TrendingUp,
+      accent: "red" as const,
     },
     {
       title: "Cupons utilizados",
       value: String(totals.coupons_used),
       description: "Pedidos com cupom aplicado",
       icon: Tag,
+      accent: "red" as const,
     },
     {
       title: "Pedidos pendentes",
       value: String(totals.pending_orders),
       description: "Aguardando pagamento",
       icon: Clock3,
+      accent: "red" as const,
     },
   ];
 
@@ -335,32 +423,51 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 min-[1800px]:grid-cols-6">
         {cards.map((card) => {
           const Icon = card.icon;
+          const isGreen = card.accent === "green";
 
           return (
             <div
               key={card.title}
-              className="rounded-2xl border border-white/10 bg-zinc-900/80 p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] backdrop-blur"
+              className={`min-w-0 rounded-2xl border bg-zinc-900/80 p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] backdrop-blur ${
+                isGreen
+                  ? "border-emerald-500/20"
+                  : "border-white/10"
+              }`}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+              <div className="flex min-w-0 items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium uppercase leading-5 tracking-wide text-zinc-500">
                     {card.title}
                   </p>
 
-                  <p className="mt-3 text-2xl font-bold text-white">
+                  <p
+                    className={`mt-3 break-words text-2xl font-bold leading-tight ${
+                      isGreen ? "text-emerald-400" : "text-white"
+                    }`}
+                  >
                     {card.value}
                   </p>
 
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-2 text-xs leading-5 text-zinc-500">
                     {card.description}
                   </p>
                 </div>
 
-                <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3">
-                  <Icon className="h-5 w-5 text-red-400" />
+                <div
+                  className={`shrink-0 rounded-xl border p-3 ${
+                    isGreen
+                      ? "border-emerald-500/25 bg-emerald-500/10"
+                      : "border-red-500/20 bg-red-500/10"
+                  }`}
+                >
+                  <Icon
+                    className={`h-5 w-5 ${
+                      isGreen ? "text-emerald-400" : "text-red-400"
+                    }`}
+                  />
                 </div>
               </div>
             </div>
@@ -504,33 +611,33 @@ const AdminDashboard = () => {
               />
             </div>
 
-            <select
+            <FilterSelect
               value={statusFilter}
-              onChange={(event) => {
-                setStatusFilter(event.target.value);
+              onChange={(value) => {
+                setStatusFilter(value);
                 setCurrentPage(1);
               }}
-              className="rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500"
-            >
-              <option value="all">Todos os status</option>
-              <option value="paid">Pagos</option>
-              <option value="pending">Pendentes</option>
-              <option value="cancelled">Cancelados</option>
-              <option value="expired">Expirados</option>
-            </select>
+              options={[
+                { value: "all", label: "Todos os status" },
+                { value: "paid", label: "Pagos" },
+                { value: "pending", label: "Pendentes" },
+                { value: "cancelled", label: "Cancelados" },
+                { value: "expired", label: "Expirados" },
+              ]}
+            />
 
-            <select
+            <FilterSelect
               value={couponFilter}
-              onChange={(event) => {
-                setCouponFilter(event.target.value);
+              onChange={(value) => {
+                setCouponFilter(value);
                 setCurrentPage(1);
               }}
-              className="rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500"
-            >
-              <option value="all">Todos os cupons</option>
-              <option value="with">Com cupom</option>
-              <option value="without">Sem cupom</option>
-            </select>
+              options={[
+                { value: "all", label: "Todos os cupons" },
+                { value: "with", label: "Com cupom" },
+                { value: "without", label: "Sem cupom" },
+              ]}
+            />
           </div>
         </div>
 

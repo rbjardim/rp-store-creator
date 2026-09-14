@@ -114,6 +114,9 @@ const AdminDashboard = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [couponFilter, setCouponFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const ORDERS_PER_PAGE = 10;
 
   const {
     data,
@@ -204,8 +207,43 @@ const AdminDashboard = () => {
         (couponFilter === "without" && !order.coupon_code);
 
       return matchesSearch && matchesStatus && matchesCoupon;
+    }).sort((a, b) => {
+      const aNumber = Number(a.order_number ?? a.id ?? 0);
+      const bNumber = Number(b.order_number ?? b.id ?? 0);
+
+      if (!Number.isNaN(aNumber) && !Number.isNaN(bNumber)) {
+        return aNumber - bNumber;
+      }
+
+      return String(a.order_number ?? a.id).localeCompare(
+        String(b.order_number ?? b.id),
+        "pt-BR",
+        { numeric: true }
+      );
     });
   }, [orders, searchTerm, statusFilter, couponFilter]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredOrders.length / ORDERS_PER_PAGE)
+  );
+
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const paginatedOrders = useMemo(() => {
+    const start = (safeCurrentPage - 1) * ORDERS_PER_PAGE;
+    return filteredOrders.slice(start, start + ORDERS_PER_PAGE);
+  }, [filteredOrders, safeCurrentPage]);
+
+  const firstVisibleOrder =
+    filteredOrders.length === 0
+      ? 0
+      : (safeCurrentPage - 1) * ORDERS_PER_PAGE + 1;
+
+  const lastVisibleOrder = Math.min(
+    safeCurrentPage * ORDERS_PER_PAGE,
+    filteredOrders.length
+  );
 
   const paidOrdersWithCoupons = useMemo(() => {
     return orders
@@ -274,7 +312,7 @@ const AdminDashboard = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 space-y-6">
       <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -457,7 +495,10 @@ const AdminDashboard = () => {
 
               <input
                 value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
+                onChange={(event) => {
+                  setSearchTerm(event.target.value);
+                  setCurrentPage(1);
+                }}
                 placeholder="Pedido, cliente, e-mail ou cupom"
                 className="w-full rounded-xl border border-white/10 bg-zinc-950 py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-red-500"
               />
@@ -465,7 +506,10 @@ const AdminDashboard = () => {
 
             <select
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              onChange={(event) => {
+                setStatusFilter(event.target.value);
+                setCurrentPage(1);
+              }}
               className="rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500"
             >
               <option value="all">Todos os status</option>
@@ -477,7 +521,10 @@ const AdminDashboard = () => {
 
             <select
               value={couponFilter}
-              onChange={(event) => setCouponFilter(event.target.value)}
+              onChange={(event) => {
+                setCouponFilter(event.target.value);
+                setCurrentPage(1);
+              }}
               className="rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-red-500"
             >
               <option value="all">Todos os cupons</option>
@@ -512,45 +559,45 @@ const AdminDashboard = () => {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-white/10">
-            <table className="min-w-[1280px] w-full">
+          <div className="w-full min-w-0 overflow-hidden rounded-xl border border-white/10">
+            <table className="w-full table-fixed">
               <thead className="bg-zinc-950">
-                <tr className="border-b border-white/10 text-left text-xs uppercase tracking-wide text-zinc-500">
-                  <th className="px-4 py-3">Pedido</th>
-                  <th className="px-4 py-3">Cliente</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Cupom</th>
-                  <th className="px-4 py-3">Desconto</th>
-                  <th className="px-4 py-3">Valor</th>
-                  <th className="px-4 py-3">Pagamento</th>
-                  <th className="px-4 py-3">Criado em</th>
-                  <th className="px-4 py-3">Pago em</th>
-                  <th className="px-4 py-3">Expira em</th>
+                <tr className="border-b border-white/10 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                  <th className="px-2.5 py-3">Pedido</th>
+                  <th className="px-2.5 py-3">Cliente</th>
+                  <th className="px-2.5 py-3">Status</th>
+                  <th className="px-2.5 py-3">Cupom</th>
+                  <th className="px-2.5 py-3">Desconto</th>
+                  <th className="px-2.5 py-3">Valor</th>
+                  <th className="px-2.5 py-3">Pagamento</th>
+                  <th className="px-2.5 py-3">Criado em</th>
+                  <th className="px-2.5 py-3">Pago em</th>
+                  <th className="px-2.5 py-3">Expira em</th>
                 </tr>
               </thead>
 
               <tbody>
-                {filteredOrders.map((order) => (
+                {paginatedOrders.map((order) => (
                   <tr
                     key={String(order.id)}
-                    className="border-b border-white/5 bg-zinc-900/40 text-sm text-zinc-300 transition last:border-b-0 hover:bg-zinc-800/60"
+                    className="border-b border-white/5 bg-zinc-900/40 text-xs text-zinc-300 transition last:border-b-0 hover:bg-zinc-800/60"
                   >
-                    <td className="px-4 py-4">
+                    <td className="px-2.5 py-3 align-top">
                       <p className="font-semibold text-white">
                         #{order.order_number || order.id}
                       </p>
                     </td>
 
-                    <td className="px-4 py-4">
-                      <p className="max-w-[220px] truncate font-medium text-white">
+                    <td className="px-2.5 py-3 align-top">
+                      <p className="truncate font-medium text-white">
                         {order.customer_name || "Não informado"}
                       </p>
-                      <p className="mt-1 max-w-[220px] truncate text-xs text-zinc-500">
+                      <p className="mt-1 truncate text-xs text-zinc-500">
                         {order.customer_email || "Sem e-mail"}
                       </p>
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-2.5 py-3 align-top">
                       <span
                         className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusClass(
                           order
@@ -560,7 +607,7 @@ const AdminDashboard = () => {
                       </span>
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-2.5 py-3 align-top">
                       {order.coupon_code ? (
                         <span className="inline-flex rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-400">
                           {order.coupon_code}
@@ -570,30 +617,30 @@ const AdminDashboard = () => {
                       )}
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-2.5 py-3 align-top">
                       {formatMoney(order.discount_amount)}
                     </td>
 
-                    <td className="px-4 py-4 font-semibold text-white">
+                    <td className="px-2.5 py-3 align-top font-semibold text-white">
                       {formatMoney(order.total)}
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-2.5 py-3 align-top">
                       <div className="flex items-center gap-2">
                         <CreditCard className="h-4 w-4 text-zinc-500" />
                         <span>{order.payment_method || "—"}</span>
                       </div>
                     </td>
 
-                    <td className="px-4 py-4 whitespace-nowrap text-zinc-400">
+                    <td className="px-2.5 py-3 align-top text-zinc-400">
                       {formatDate(order.created_at)}
                     </td>
 
-                    <td className="px-4 py-4 whitespace-nowrap text-zinc-400">
+                    <td className="px-2.5 py-3 align-top text-zinc-400">
                       {formatDate(order.paid_at)}
                     </td>
 
-                    <td className="px-4 py-4 whitespace-nowrap">
+                    <td className="px-2.5 py-3 align-top">
                       <span
                         className={
                           !isPaid(order) && order.expires_at
@@ -611,12 +658,43 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        <div className="mt-4 flex flex-col gap-2 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
-          <span>
-            Exibindo {filteredOrders.length} de {orders.length} pedido(s).
-          </span>
+        <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="text-xs text-zinc-500">
+            Exibindo {firstVisibleOrder}–{lastVisibleOrder} de {filteredOrders.length} pedido(s) filtrado(s).
+            {filteredOrders.length !== orders.length && (
+              <> Total geral: {orders.length}.</>
+            )}
+          </div>
 
-          <span>
+          {filteredOrders.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={safeCurrentPage === 1}
+                className="rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Anterior
+              </button>
+
+              <span className="px-2 text-xs text-zinc-400">
+                Página {safeCurrentPage} de {totalPages}
+              </span>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setCurrentPage((page) => Math.min(totalPages, page + 1))
+                }
+                disabled={safeCurrentPage === totalPages}
+                className="rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Próxima
+              </button>
+            </div>
+          )}
+
+          <span className="text-xs text-zinc-500">
             Atualização automática a cada 30 segundos.
           </span>
         </div>

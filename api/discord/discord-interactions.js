@@ -64,6 +64,150 @@ function formatBRL(value) {
   });
 }
 
+
+function getFinanceRoleIds() {
+  return String(process.env.DISCORD_FINANCE_ADMIN_ROLES || "")
+    .split(",")
+    .map((role) => role.trim())
+    .filter(Boolean);
+}
+
+function hasFinancePermission(interaction) {
+  const allowedRoles = getFinanceRoleIds();
+  const memberRoles = interaction.member?.roles || [];
+  return allowedRoles.some((roleId) => memberRoles.includes(roleId));
+}
+
+function getFinanceResponsibleMention() {
+  return getFinanceRoleIds()
+    .map((roleId) => `<@&${roleId}>`)
+    .join(" ");
+}
+
+async function notifyFinancialChange({ title, description, color = 16755200 }) {
+  const channelId = process.env.DISCORD_FINANCE_CHANNEL_ID;
+  if (!channelId) return;
+
+  const roles = getFinanceRoleIds();
+
+  const response = await discordFetch(`/channels/${channelId}/messages`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      content: getFinanceResponsibleMention(),
+      allowed_mentions: {
+        parse: [],
+        roles,
+      },
+      embeds: [
+        {
+          title,
+          description,
+          color,
+          timestamp: new Date().toISOString(),
+          footer: {
+            text: "Campo Limpo Roleplay • Controle Financeiro",
+          },
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    console.error(
+      "Erro ao notificar alteração financeira:",
+      await response.text()
+    );
+  }
+}
+
+async function updateFinancialPanelMessage(messageId = null) {
+  const channelId = process.env.DISCORD_FINANCE_CHANNEL_ID;
+  if (!channelId) {
+    throw new Error("DISCORD_FINANCE_CHANNEL_ID não configurado.");
+  }
+
+  const data = await getFinancialData();
+  const panel = buildFinancialPanel(data.summary, data.monthly);
+
+  let targetMessageId = messageId;
+
+  if (!targetMessageId) {
+    const messagesResponse = await discordFetch(
+      `/channels/${channelId}/messages?limit=50`
+    );
+    const messages = await messagesResponse.json();
+
+    if (!messagesResponse.ok || !Array.isArray(messages)) {
+      throw new Error("Não foi possível localizar o painel financeiro.");
+    }
+
+    const panelMessage = messages.find(
+      (message) =>
+        message.author?.bot &&
+        message.embeds?.some(
+          (embed) => embed.title === "💰 Controle Financeiro"
+        )
+    );
+
+    targetMessageId = panelMessage?.id;
+  }
+
+  if (!targetMessageId) {
+    throw new Error("Mensagem do painel financeiro não encontrada.");
+  }
+
+  const updateResponse = await discordFetch(
+    `/channels/${channelId}/messages/${targetMessageId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(panel),
+    }
+  );
+
+  if (!updateResponse.ok) {
+    console.error(
+      "Erro ao atualizar painel financeiro:",
+      await updateResponse.text()
+    );
+    throw new Error("Discord recusou atualização do painel.");
+  }
+
+  return targetMessageId;
+}
+
+function getModalValue(interaction, customId) {
+  for (const row of interaction.data?.components || []) {
+    for (const component of row.components || []) {
+      if (component.custom_id === customId) {
+        return component.value || "";
+      }
+    }
+  }
+  return "";
+}
+
+function parseBRLInput(value) {
+  let normalized = String(value || "")
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/^R\$/i, "");
+
+  if (normalized.includes(".") && normalized.includes(",")) {
+    normalized = normalized.replace(/\./g, "").replace(",", ".");
+  } else if (normalized.includes(",")) {
+    normalized = normalized.replace(",", ".");
+  }
+
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : NaN;
+}
+
 function buildFinancialPanel(summary, monthly) {
   const balance = Number(summary.balance || 0);
   const monthlyResult = Number(monthly.result || 0);
@@ -900,6 +1044,147 @@ export default async function handler(
 
     /*
     |--------------------------------------------------------------------------
+    | MODAL - REGISTRAR GASTO
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      interaction.type === 5 &&
+      interaction.data?.custom_id === "finance_expense_modal"
+    ) {
+      const userId = interaction.member?.user?.id;
+
+      const userName =
+        interaction.member?.nick ||
+        interaction.member?.user?.global_name ||
+        interaction.member?.user?.username ||
+        userId;
+
+      if (!hasFinancePermission(interaction)) {
+        return res.json({
+          type: 4,
+          data: {
+            content: "❌ Você não possui permissão para registrar gastos.",
+            flags: 64,
+          },
+        });
+      }
+
+      const amount = parseBRLInput(
+        getModalValue(interaction, "expense_amount")
+      );
+
+      const description = getModalValue(
+        interaction,
+        "expense_description"
+      ).trim();
+
+      const category = getModalValue(
+        interaction,
+        "expense_category"
+      ).trim();
+
+      const observation = getModalValue(
+        interaction,
+        "expense_observation"
+      ).trim();
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res.json({
+          type: 4,
+          data: {
+            content: "❌ Informe um valor válido. Exemplo: `250,00`.",
+            flags: 64,
+          },
+        });
+      }
+
+      if (!description) {
+        return res.json({
+          type: 4,
+          data: {
+            content: "❌ Informe a descrição do gasto.",
+            flags: 64,
+          },
+        });
+      }
+
+      const expenseResponse = await financialApi(
+        "/api/financial/expenses",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            amount,
+            description,
+            category: category || null,
+            observation: observation || null,
+            discordUserId: userId,
+            discordUsername: userName,
+          }),
+        }
+      );
+
+      const expenseData = await expenseResponse.json();
+
+      if (!expenseResponse.ok || !expenseData.success) {
+        console.error("Erro ao registrar gasto:", expenseData);
+
+        return res.json({
+          type: 4,
+          data: {
+            content:
+              `❌ Não foi possível registrar o gasto: ${
+                expenseData.message || "erro desconhecido"
+              }`,
+            flags: 64,
+          },
+        });
+      }
+
+      try {
+        await updateFinancialPanelMessage();
+      } catch (panelError) {
+        console.error(
+          "Gasto registrado, mas painel não atualizou:",
+          panelError
+        );
+      }
+
+      try {
+        await notifyFinancialChange({
+          title: "💸 Nova saída registrada",
+          description:
+            `**Valor:** ${formatBRL(amount)}\n` +
+            `**Descrição:** ${description}\n` +
+            `**Categoria:** ${category || "Não informada"}\n` +
+            `**Registrado por:** <@${userId}>` +
+            (observation
+              ? `\n**Observação:** ${observation}`
+              : ""),
+          color: 15548997,
+        });
+      } catch (notifyError) {
+        console.error(
+          "Gasto registrado, mas a notificação falhou:",
+          notifyError
+        );
+      }
+
+      return res.json({
+        type: 4,
+        data: {
+          content:
+            `✅ **Gasto registrado com sucesso!**\n\n` +
+            `💸 Valor: **${formatBRL(amount)}**\n` +
+            `📝 Descrição: **${description}**` +
+            (category ? `\n📂 Categoria: **${category}**` : ""),
+          flags: 64,
+        },
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | COMPONENTES / BOTÕES
     |--------------------------------------------------------------------------
     */
@@ -933,102 +1218,37 @@ export default async function handler(
       |--------------------------------------------------------------------------
       */
 
-      if (
-        id ===
-        "finance_refresh"
-      ) {
+      if (id === "finance_refresh") {
         try {
           const financeChannelId =
-            process.env
-              .DISCORD_FINANCE_CHANNEL_ID;
+            process.env.DISCORD_FINANCE_CHANNEL_ID;
 
-          if (
-            channelId !==
-            financeChannelId
-          ) {
+          if (channelId !== financeChannelId) {
             return res.json({
               type: 4,
-
               data: {
-                content:
-                  "❌ Este painel não pertence ao canal financeiro.",
-
+                content: "❌ Este painel não pertence ao canal financeiro.",
                 flags: 64,
               },
             });
           }
 
-          const data =
-            await getFinancialData();
-
-          const panel =
-            buildFinancialPanel(
-              data.summary,
-              data.monthly
-            );
-
-          const messageId =
-            interaction
-              .message.id;
-
-          const updateResponse =
-            await discordFetch(
-              `/channels/${channelId}/messages/${messageId}`,
-              {
-                method:
-                  "PATCH",
-
-                headers: {
-                  "Content-Type":
-                    "application/json",
-                },
-
-                body:
-                  JSON.stringify(
-                    panel
-                  ),
-              }
-            );
-
-          if (
-            !updateResponse.ok
-          ) {
-            const errorData =
-              await updateResponse.json();
-
-            console.error(
-              "Erro ao atualizar painel financeiro:",
-              errorData
-            );
-
-            throw new Error(
-              "Discord recusou atualização do painel."
-            );
-          }
+          await updateFinancialPanelMessage(interaction.message?.id);
 
           return res.json({
             type: 4,
-
             data: {
-              content:
-                "✅ Painel financeiro atualizado.",
-
+              content: "✅ Painel financeiro atualizado.",
               flags: 64,
             },
           });
         } catch (error) {
-          console.error(
-            "ERRO FINANCE_REFRESH:",
-            error
-          );
+          console.error("ERRO FINANCE_REFRESH:", error);
 
           return res.json({
             type: 4,
-
             data: {
-              content:
-                "❌ Não foi possível atualizar o painel.",
-
+              content: "❌ Não foi possível atualizar o painel.",
               flags: 64,
             },
           });
@@ -1044,18 +1264,80 @@ export default async function handler(
       |
       */
 
-      if (
-        id ===
-        "finance_expense"
-      ) {
+      if (id === "finance_expense") {
+        if (!hasFinancePermission(interaction)) {
+          return res.json({
+            type: 4,
+            data: {
+              content: "❌ Você não possui permissão para registrar gastos.",
+              flags: 64,
+            },
+          });
+        }
+
         return res.json({
-          type: 4,
-
+          type: 9,
           data: {
-            content:
-              "🚧 Registro de gastos será habilitado na próxima etapa.",
-
-            flags: 64,
+            custom_id: "finance_expense_modal",
+            title: "Registrar Gasto",
+            components: [
+              {
+                type: 1,
+                components: [
+                  {
+                    type: 4,
+                    custom_id: "expense_amount",
+                    label: "Valor do gasto",
+                    style: 1,
+                    placeholder: "Ex: 250,00",
+                    required: true,
+                    max_length: 20,
+                  },
+                ],
+              },
+              {
+                type: 1,
+                components: [
+                  {
+                    type: 4,
+                    custom_id: "expense_description",
+                    label: "Descrição",
+                    style: 1,
+                    placeholder: "Ex: Hospedagem do servidor",
+                    required: true,
+                    max_length: 100,
+                  },
+                ],
+              },
+              {
+                type: 1,
+                components: [
+                  {
+                    type: 4,
+                    custom_id: "expense_category",
+                    label: "Categoria",
+                    style: 1,
+                    placeholder: "Ex: Servidor, Marketing, Desenvolvimento",
+                    required: false,
+                    max_length: 50,
+                  },
+                ],
+              },
+              {
+                type: 1,
+                components: [
+                  {
+                    type: 4,
+                    custom_id: "expense_observation",
+                    label: "Observação",
+                    style: 2,
+                    placeholder: "Informações adicionais...",
+                    required: false,
+                    max_length: 500,
+                  },
+                ],
+              },
+            ],
           },
         });
       }

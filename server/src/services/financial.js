@@ -54,9 +54,11 @@ async function getMonthlySummary() {
       COALESCE(SUM(total_amount), 0) AS revenue
     FROM orders
     WHERE status = 'paid'
-      AND paid_at IS NOT NULL
-      AND YEAR(paid_at) = YEAR(CURRENT_DATE())
-      AND MONTH(paid_at) = MONTH(CURRENT_DATE())
+      AND COALESCE(paid_at, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+      AND COALESCE(paid_at, created_at) < DATE_FORMAT(
+        DATE_ADD(CURRENT_DATE(), INTERVAL 1 MONTH),
+        '%Y-%m-01'
+      )
   `);
 
   const [expenseRows] = await pool.execute(`
@@ -64,8 +66,11 @@ async function getMonthlySummary() {
       COUNT(*) AS expenses_count,
       COALESCE(SUM(amount), 0) AS expenses
     FROM financial_expenses
-    WHERE YEAR(created_at) = YEAR(CURRENT_DATE())
-      AND MONTH(created_at) = MONTH(CURRENT_DATE())
+    WHERE created_at >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+      AND created_at < DATE_FORMAT(
+        DATE_ADD(CURRENT_DATE(), INTERVAL 1 MONTH),
+        '%Y-%m-01'
+      )
   `);
 
   const revenue = toNumber(orderRows[0]?.revenue);
@@ -75,7 +80,6 @@ async function getMonthlySummary() {
     revenue,
     expenses,
     result: revenue - expenses,
-
     salesCount: Number(orderRows[0]?.sales_count || 0),
     expensesCount: Number(expenseRows[0]?.expenses_count || 0),
   };

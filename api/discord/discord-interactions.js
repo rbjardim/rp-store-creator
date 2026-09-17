@@ -85,7 +85,8 @@ function getFinanceResponsibleMention() {
 }
 
 async function notifyFinancialChange({ title, description, color = 16755200 }) {
-  const channelId = process.env.DISCORD_FINANCE_CHANNEL_ID;
+  const channelId =
+  process.env.DISCORD_FINANCE_LOG_CHANNEL_ID;
   if (!channelId) return;
 
   const roles = getFinanceRoleIds();
@@ -206,6 +207,72 @@ function parseBRLInput(value) {
 
   const amount = Number(normalized);
   return Number.isFinite(amount) ? amount : NaN;
+}
+
+async function getFinancialHistory(limit = 10) {
+  const response = await financialApi(`/api/financial/history?limit=${limit}`);
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || "Erro ao consultar histórico financeiro.");
+  }
+  return data.history || [];
+}
+
+function formatDiscordDate(value) {
+  if (!value) return "Sem data";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Sem data";
+  return date.toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function buildHistoryEmbed(history) {
+  const rows = history.slice(0, 10);
+  const description = rows.length
+    ? rows.map((item) => {
+        const isIncome = item.movement_type === "entrada";
+        const icon = isIncome ? "🟢" : "🔴";
+        const sign = isIncome ? "+" : "-";
+        const label = item.description || (isIncome ? "Entrada" : "Saída");
+        return `${icon} **${sign}${formatBRL(item.amount)}** • ${label}\n🕒 ${formatDiscordDate(item.movement_date)}`;
+      }).join("\n\n")
+    : "Nenhuma movimentação encontrada.";
+
+  return {
+    title: "📋 Histórico Financeiro",
+    description,
+    color: 5793266,
+    footer: { text: "Últimas 10 movimentações • Campo Limpo Roleplay" },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function buildReportEmbed(summary, monthly) {
+  const result = Number(monthly.result || 0);
+  return {
+    title: "📊 Relatório Financeiro",
+    description: "**Campo Limpo Roleplay**\nResumo financeiro atualizado.",
+    color: result >= 0 ? 5763719 : 15548997,
+    fields: [
+      { name: "💵 Saldo Atual", value: `**${formatBRL(summary.balance)}**`, inline: false },
+      { name: "📈 Receita Total", value: formatBRL(summary.revenue), inline: true },
+      { name: "📉 Despesas Totais", value: formatBRL(summary.expenses), inline: true },
+      { name: "🛒 Vendas Aprovadas", value: `${summary.salesCount || 0}`, inline: true },
+      { name: "📅 Entradas no Mês", value: formatBRL(monthly.revenue), inline: true },
+      { name: "📤 Saídas no Mês", value: formatBRL(monthly.expenses), inline: true },
+      { name: "📊 Resultado do Mês", value: `${result >= 0 ? "+" : ""}${formatBRL(result)}`, inline: true },
+      { name: "🧾 Vendas neste Mês", value: `${monthly.salesCount || 0}`, inline: true },
+      { name: "💸 Gastos Registrados", value: `${summary.expensesCount || 0}`, inline: true },
+    ],
+    footer: { text: "Campo Limpo Roleplay • Controle Financeiro" },
+    timestamp: new Date().toISOString(),
+  };
 }
 
 function buildFinancialPanel(summary, monthly) {
@@ -1342,36 +1409,48 @@ export default async function handler(
         });
       }
 
-      if (
-        id ===
-        "finance_history"
-      ) {
-        return res.json({
-          type: 4,
-
-          data: {
-            content:
-              "🚧 Histórico financeiro será habilitado na próxima etapa.",
-
-            flags: 64,
-          },
-        });
+      if (id === "finance_history") {
+        try {
+          const history = await getFinancialHistory(10);
+          return res.json({
+            type: 4,
+            data: {
+              embeds: [buildHistoryEmbed(history)],
+              flags: 64,
+            },
+          });
+        } catch (error) {
+          console.error("ERRO FINANCE_HISTORY:", error);
+          return res.json({
+            type: 4,
+            data: {
+              content: "❌ Não foi possível carregar o histórico financeiro.",
+              flags: 64,
+            },
+          });
+        }
       }
 
-      if (
-        id ===
-        "finance_report"
-      ) {
-        return res.json({
-          type: 4,
-
-          data: {
-            content:
-              "🚧 Relatório financeiro será habilitado na próxima etapa.",
-
-            flags: 64,
-          },
-        });
+      if (id === "finance_report") {
+        try {
+          const data = await getFinancialData();
+          return res.json({
+            type: 4,
+            data: {
+              embeds: [buildReportEmbed(data.summary, data.monthly)],
+              flags: 64,
+            },
+          });
+        } catch (error) {
+          console.error("ERRO FINANCE_REPORT:", error);
+          return res.json({
+            type: 4,
+            data: {
+              content: "❌ Não foi possível gerar o relatório financeiro.",
+              flags: 64,
+            },
+          });
+        }
       }
 
       /*

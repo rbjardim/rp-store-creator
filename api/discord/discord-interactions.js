@@ -33,6 +33,184 @@ async function discordFetch(url, options = {}) {
   });
 }
 
+async function financialApi(path, options = {}) {
+  const baseUrl =
+    process.env.FINANCIAL_API_URL || "https://api.campolimporp.com.br";
+
+  return fetch(`${baseUrl}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "x-webhook-secret": process.env.INTERNAL_WEBHOOK_SECRET,
+      ...(options.headers || {}),
+    },
+  });
+}
+
+function formatBRL(value) {
+  return Number(value || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+function buildFinancialPanel(summary, monthly) {
+  const balance = Number(summary.balance || 0);
+  const monthlyResult = Number(monthly.result || 0);
+
+  return {
+    embeds: [
+      {
+        title: "💰 Controle Financeiro",
+        description:
+          "**Campo Limpo Roleplay**\n" +
+          "Acompanhamento financeiro da loja em tempo real.",
+        color: balance >= 0 ? 5763719 : 15548997,
+
+        fields: [
+          {
+            name: "💵 Saldo Atual",
+            value: `**${formatBRL(balance)}**`,
+            inline: false,
+          },
+          {
+            name: "📈 Receita Total",
+            value: formatBRL(summary.revenue),
+            inline: true,
+          },
+          {
+            name: "📉 Despesas",
+            value: formatBRL(summary.expenses),
+            inline: true,
+          },
+          {
+            name: "🛒 Vendas Aprovadas",
+            value: `${summary.salesCount || 0}`,
+            inline: true,
+          },
+          {
+            name: "📅 Entradas no Mês",
+            value: formatBRL(monthly.revenue),
+            inline: true,
+          },
+          {
+            name: "📤 Saídas no Mês",
+            value: formatBRL(monthly.expenses),
+            inline: true,
+          },
+          {
+            name: "📊 Resultado do Mês",
+            value:
+              `${monthlyResult >= 0 ? "+" : ""}` +
+              formatBRL(monthlyResult),
+            inline: true,
+          },
+          {
+            name: "🧾 Vendas neste Mês",
+            value: `${monthly.salesCount || 0}`,
+            inline: true,
+          },
+          {
+            name: "💸 Gastos Registrados",
+            value: `${summary.expensesCount || 0}`,
+            inline: true,
+          },
+        ],
+
+        footer: {
+          text: "Campo Limpo Roleplay • Controle Financeiro",
+        },
+
+        timestamp: new Date().toISOString(),
+      },
+    ],
+
+    components: [
+      {
+        type: 1,
+        components: [
+          {
+            type: 2,
+            style: 4,
+            custom_id: "finance_expense",
+            label: "Registrar Gasto",
+            emoji: { name: "➖" },
+          },
+          {
+            type: 2,
+            style: 2,
+            custom_id: "finance_history",
+            label: "Histórico",
+            emoji: { name: "📋" },
+          },
+          {
+            type: 2,
+            style: 2,
+            custom_id: "finance_report",
+            label: "Relatório",
+            emoji: { name: "📊" },
+          },
+          {
+            type: 2,
+            style: 1,
+            custom_id: "finance_refresh",
+            label: "Atualizar",
+            emoji: { name: "🔄" },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+async function getFinancialData() {
+  const response = await financialApi("/api/financial/summary");
+
+  const data = await response.json();
+
+  if (!response.ok || !data.success) {
+    console.error("Erro API financeira:", data);
+    throw new Error(data.message || "Erro ao consultar financeiro.");
+  }
+
+  return data;
+}
+
+async function sendFinancialPanel() {
+  const channelId = process.env.DISCORD_FINANCE_CHANNEL_ID;
+
+  if (!channelId) {
+    throw new Error("DISCORD_FINANCE_CHANNEL_ID não configurado.");
+  }
+
+  const data = await getFinancialData();
+
+  const panel = buildFinancialPanel(
+    data.summary,
+    data.monthly
+  );
+
+  const response = await discordFetch(
+    `/channels/${channelId}/messages`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(panel),
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    console.error("Erro ao criar painel financeiro:", result);
+    throw new Error("Não foi possível criar o painel financeiro.");
+  }
+
+  return result;
+}
+
 async function getAllMessages(channelId) {
   let messages = [];
   let before;
